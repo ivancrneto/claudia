@@ -15,7 +15,6 @@ followed teams. With API_FOOTBALL_KEY set it uses the live provider; else the of
 from __future__ import annotations
 
 import base64
-import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -28,6 +27,7 @@ if str(_ROOT) not in sys.path:
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
+from services.config import Settings  # noqa: E402
 from services.gateway.pipeline import VoicePipeline  # noqa: E402
 from services.stt import EchoTextSTT, FasterWhisperSTT  # noqa: E402
 from services.tts import PiperTTS, StubTTS  # noqa: E402
@@ -39,23 +39,24 @@ from skills.futebol.teams import TEAMS  # noqa: E402
 from skills.timer.handler import TimerSkill  # noqa: E402
 from skills.weather.handler import WeatherSkill  # noqa: E402
 
+settings = Settings.from_env()
 _FUTEBOL_CACHE = InMemoryFixtureCache()
 
 
 def _football_provider():
-    key = os.environ.get("API_FOOTBALL_KEY")
-    if key:
-        season = int(os.environ.get("FOOTBALL_SEASON", "2026"))
-        return APIFootballProvider(api_key=key, season=season)
+    if settings.api_football_key:
+        return APIFootballProvider(
+            api_key=settings.api_football_key, season=settings.football_season
+        )
     return StubProvider()
 
 
 def _make_stt():
-    return FasterWhisperSTT() if os.environ.get("STT_BACKEND") == "whisper" else EchoTextSTT()
+    return FasterWhisperSTT() if settings.stt_backend == "whisper" else EchoTextSTT()
 
 
 def _make_tts():
-    return PiperTTS() if os.environ.get("TTS_BACKEND") == "piper" else StubTTS()
+    return PiperTTS() if settings.tts_backend == "piper" else StubTTS()
 
 
 _football = _football_provider()
@@ -73,11 +74,12 @@ async def _prime_fixtures() -> None:
 
 @asynccontextmanager
 async def _lifespan(_app: "FastAPI"):
+    settings.validate()  # fail fast in prod if a required secret is missing
     await _prime_fixtures()
     yield
 
 
-app = FastAPI(title="Claudia Gateway", version="0.3.0", lifespan=_lifespan)
+app = FastAPI(title="Claudia Gateway", version="0.4.0", lifespan=_lifespan)
 
 
 class HandleIn(BaseModel):
