@@ -1,0 +1,9 @@
+name: weather
+locale: pt-BR
+intents:
+  - name: GET_WEATHER
+    utterances:
+      - "como está o tempo"
+      - "vai chover hoje"
+      - "qual a previsão do tempo"
+      - "qual a temperatura"

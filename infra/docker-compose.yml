@@ -1,0 +1,34 @@
+# Self-hosted stack for Claudia. Phase 0 runs just the gateway; STT/TTS/LLM/db services
+# are declared (commented) as the target topology and enabled in later phases.
+services:
+  gateway:
+    build:
+      context: ..
+      dockerfile: services/gateway/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - CLAUDIA_ENV=dev
+    # depends_on: [redis, postgres]
+
+  # --- enabled in later phases ---
+  # redis:
+  #   image: redis:7-alpine
+  #   ports: ["6379:6379"]
+  #
+  # postgres:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_DB: claudia
+  #     POSTGRES_PASSWORD: claudia
+  #   ports: ["5432:5432"]
+  #
+  # stt:        # faster-whisper (GPU) — Phase 1
+  #   image: ghcr.io/your-org/claudia-stt:latest
+  #
+  # tts:        # Piper pt_BR — Phase 1
+  #   image: ghcr.io/your-org/claudia-tts:latest
+  #
+  # llm:        # Ollama / vLLM (default local brain) — Phase 1/3.5
+  #   image: ollama/ollama:latest
+  #   ports: ["11434:11434"]
