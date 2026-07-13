@@ -32,8 +32,15 @@ Incremental build phases. Each phase is independently demoable.
 - Android Device Owner + Lock Task Mode; iOS Single App Mode + ASAM.
 - Companion provisioning flows (QR / Configurator / MDM).
 
-## Phase 3 — Voice UX
-- openWakeWord ("Ei Claudia"), streaming partials, barge-in, multi-turn.
+## Phase 3 — Voice UX ✅ (in progress)
+- ✅ Wake word: `WakeWord` protocol, `OpenWakeWord` (inference stubbed at the boundary) +
+  offline `KeywordWakeWord`.
+- ✅ Streaming STT: `StreamingSTT` protocol emitting growing `Partial`s + a final; offline
+  `EchoStreamingSTT`.
+- ✅ `VoiceSession` state machine (IDLE→LISTENING→THINKING→SPEAKING) with **barge-in** that
+  cancels TTS playback mid-reply and yields the floor back to LISTENING.
+- ⏳ Follow-ups: real openWakeWord + faster-whisper streaming decode, VAD endpointing,
+  early-intent on a stable prefix, and a streaming `WS /ws/voice` that emits partials.
 
 ## Phase 3.5 — Bring Your Own Assistant ✅ (in progress)
 - ✅ Native adapters: `AnthropicAdapter`, `OpenAIAdapter`, `GeminiAdapter`, plus

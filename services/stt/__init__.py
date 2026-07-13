@@ -1,7 +1,16 @@
 """Speech-to-text adapters. Real model behind a stub boundary; offline stubs for tests."""
 
 from .base import STT
+from .streaming import EchoStreamingSTT, Partial, StreamingSTT
 from .stub import EchoTextSTT, FixedSTT
 from .whisper import FasterWhisperSTT
 
-__all__ = ["STT", "EchoTextSTT", "FixedSTT", "FasterWhisperSTT"]
+__all__ = [
+    "STT",
+    "EchoTextSTT",
+    "FixedSTT",
+    "FasterWhisperSTT",
+    "StreamingSTT",
+    "EchoStreamingSTT",
+    "Partial",
+]
