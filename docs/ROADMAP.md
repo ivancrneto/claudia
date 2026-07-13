@@ -10,10 +10,14 @@ Incremental build phases. Each phase is independently demoable.
 - Kiosk native-module stubs (Android + iOS).
 - `docker-compose` for the self-hosted stack.
 
-## Phase 1 — Core voice pipeline
-- faster-whisper STT + Piper TTS wired into the gateway over WebSocket.
-- Hybrid NLU router (fast intent grammar → LLM fallback).
-- Skills: music, weather, YouTube (device actions).
+## Phase 1 — Core voice pipeline ✅ (in progress)
+- ✅ `VoicePipeline` turn orchestrator: audio → STT → hybrid NLU → skills/brain → TTS →
+  audio + device actions. Adapters injected, so it's fully testable offline.
+- ✅ STT adapters: `FasterWhisperSTT` (model call stubbed at the boundary) + offline
+  `EchoTextSTT`/`FixedSTT`. TTS adapters: `PiperTTS` (stubbed) + offline `StubTTS`.
+- ✅ `HybridRouter`: fast grammar first, optional LLM classifier on a miss, else brain Q&A.
+- ✅ Gateway endpoints: `POST /dev/turn` (base64 audio) and `WS /ws/voice` (binary frames).
+- ⏳ Follow-ups: real faster-whisper/Piper decode, Open-Meteo weather, YouTube device action.
 
 ## Phase 2 — Futebol ✅ (in progress)
 - ✅ Team resolver: Série A roster + nicknames + article-stripping + fuzzy match, with
