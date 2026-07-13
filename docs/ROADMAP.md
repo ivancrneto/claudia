@@ -35,11 +35,16 @@ Incremental build phases. Each phase is independently demoable.
 ## Phase 3 — Voice UX
 - openWakeWord ("Ei Claudia"), streaming partials, barge-in, multi-turn.
 
-## Phase 3.5 — Bring Your Own Assistant
-- Ship `LocalAdapter` + `OpenAICompatAdapter` first (local + OpenRouter/most providers).
-- Add Anthropic / OpenAI / Gemini adapters + OAuth flows.
-- Account Vault (KMS) + companion portal + QR device pairing.
-- Skill→tool bridge (MCP + function-calling).
+## Phase 3.5 — Bring Your Own Assistant ✅ (in progress)
+- ✅ Native adapters: `AnthropicAdapter`, `OpenAIAdapter`, `GeminiAdapter`, plus
+  `OpenAICompatAdapter` (OpenRouter/Groq/Together/Ollama). Shared SSE transport (injected,
+  so streaming is unit-tested offline); streaming text + tool-call parsing per provider.
+- ✅ Skill→tool bridge translation: neutral schema → Anthropic / OpenAI / Gemini formats.
+- ✅ Brain router selects the adapter by `kind`, falling back to the local brain.
+- ✅ Account Vault with a pluggable `Cipher` (`FernetCipher` in prod, lazy-imported);
+  credentials encrypted at rest, decrypted server-side into a brain config.
+- ⏳ Follow-ups: provider OAuth flows, KMS-backed key + Postgres store, companion portal
+  UI, single-use/expiring pairing codes, streaming tool-call argument assembly.
 
 ## Phase 4 — Personalization
 - Favorite team, per-user profiles (voice-match / PIN), budgets/quotas.
