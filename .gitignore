@@ -11,9 +11,22 @@ node_modules/
 dist/
 build/
 
-# Env / secrets
+# Env / secrets — the repo is public; real secrets must never be committed.
 .env
+.env.*
+!.env.example
 *.local
+*.pem
+*.key
+*.p12
+*.keystore
+secrets/
+claudia.env
+
+# Model weights (pulled at deploy, not committed)
+*.onnx
+*.gguf
+*.bin
 
 # OS
 .DS_Store

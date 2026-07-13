@@ -1,0 +1,6 @@
+# Reverse proxy with automatic HTTPS in front of the gateway.
+# Set CLAUDIA_DOMAIN in the deploy env; Caddy provisions/renews the TLS cert.
+{$CLAUDIA_DOMAIN} {
+	encode gzip
+	reverse_proxy gateway:8000
+}

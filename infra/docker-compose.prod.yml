@@ -1,0 +1,40 @@
+# Production topology for a self-hosted VPS.
+#
+# Secrets are NOT in this repo. They come from an env file that lives OUTSIDE the repo
+# (default /etc/claudia/claudia.env, chmod 600, managed by the host / secret manager) and
+# is referenced via CLAUDIA_ENV_FILE. Never commit that file. See docs/DEPLOYMENT.md.
+#
+#   export CLAUDIA_ENV_FILE=/etc/claudia/claudia.env
+#   export CLAUDIA_DOMAIN=claudia.example.com
+#   docker compose -f infra/docker-compose.prod.yml up -d --build
+services:
+  gateway:
+    build:
+      context: ..
+      dockerfile: services/gateway/Dockerfile
+    env_file:
+      - ${CLAUDIA_ENV_FILE:?set CLAUDIA_ENV_FILE to a secrets file OUTSIDE the repo}
+    environment:
+      - CLAUDIA_ENV=prod
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    environment:
+      - CLAUDIA_DOMAIN=${CLAUDIA_DOMAIN:?set CLAUDIA_DOMAIN for automatic TLS}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}

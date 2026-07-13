@@ -53,6 +53,17 @@ Incremental build phases. Each phase is independently demoable.
 - ⏳ Follow-ups: provider OAuth flows, KMS-backed key + Postgres store, companion portal
   UI, single-use/expiring pairing codes, streaming tool-call argument assembly.
 
+## Deployment — public-repo posture ✅ (in progress)
+- ✅ Central `services/config.py` (12-factor): all config from env, no secrets in code,
+  prod fails fast on missing required secrets, `__repr__` redacts secret values.
+- ✅ `.env.example` (keys only), `.gitignore` hardened (real `.env`, keys, model weights),
+  `SECURITY.md`, and `docs/DEPLOYMENT.md` (external secret manager + VPS/Compose).
+- ✅ `infra/docker-compose.prod.yml` + `Caddyfile`: secrets from an env file mounted OUTSIDE
+  the repo (`CLAUDIA_ENV_FILE`); Caddy terminates TLS in front of the gateway.
+- ✅ CI `secret-scan` gate (gitleaks) so no secret can land in the public repo; test job
+  needs no credentials (all stubs).
+- ⏳ Follow-ups: cloud secret-manager fetch script, GitHub Actions deploy via OIDC.
+
 ## Phase 4 — Personalization
 - Favorite team, per-user profiles (voice-match / PIN), budgets/quotas.
 - Analytics: `intent_used` events to measure the most-used asks.
