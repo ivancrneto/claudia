@@ -35,7 +35,8 @@ def test_futebol_nickname():
 
 def test_futebol_ambiguous_tricolor():
     _, resp = _handle("quando o Tricolor joga")
-    assert "Bahia ou o São Paulo" in resp.speech
+    assert "Você quis dizer" in resp.speech
+    assert "Bahia" in resp.speech and "São Paulo" in resp.speech
 
 
 def test_futebol_ambiguous_resolved_by_favorite():
