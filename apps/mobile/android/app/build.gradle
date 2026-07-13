@@ -1,0 +1,76 @@
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+}
+
+// Version is derived from the release tag by CI (tools/android_version.py) and passed in
+// via -PversionName / -PversionCode. Defaults keep local debug builds working.
+def appVersionName = project.hasProperty("versionName") ? project.versionName : "0.0.0"
+def appVersionCode = project.hasProperty("versionCode") ? project.versionCode.toInteger() : 1
+
+android {
+    namespace "com.claudia"
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 26
+        targetSdk 34
+        versionName appVersionName
+        versionCode appVersionCode
+    }
+
+    // Release signing pulls entirely from the environment — the upload keystore is
+    // base64-decoded by CI to a path OUTSIDE the repo. Nothing sensitive is committed.
+    signingConfigs {
+        release {
+            def storeFilePath = System.getenv("CLAUDIA_UPLOAD_STORE_FILE")
+            if (storeFilePath) {
+                storeFile file(storeFilePath)
+                storePassword System.getenv("CLAUDIA_UPLOAD_STORE_PASSWORD")
+                keyAlias System.getenv("CLAUDIA_UPLOAD_KEY_ALIAS")
+                keyPassword System.getenv("CLAUDIA_UPLOAD_KEY_PASSWORD")
+            }
+        }
+    }
+
+    // Two distributions from one codebase:
+    //  - kiosk    → signed APK for MDM/sideload (Device Owner + Lock Task, a11y fallback)
+    //  - consumer → AAB uploaded to Play via fastlane (Play App Signing)
+    flavorDimensions "distribution"
+    productFlavors {
+        kiosk {
+            dimension "distribution"
+            applicationId "com.claudia.kiosk"
+            versionNameSuffix "-kiosk"
+        }
+        consumer {
+            dimension "distribution"
+            applicationId "com.claudia"
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+        }
+    }
+
+    // Reuse the kiosk native modules that already live in the repo.
+    sourceSets {
+        main {
+            java.srcDirs += ["../../kiosk/android"]
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+
+dependencies {
+    implementation "androidx.appcompat:appcompat:1.7.0"
+    implementation "androidx.core:core-ktx:1.13.1"
+}

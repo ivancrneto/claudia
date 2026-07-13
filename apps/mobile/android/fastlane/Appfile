@@ -1,0 +1,4 @@
+# Play service-account JSON is provided via env in CI (PLAY_SERVICE_ACCOUNT_JSON path),
+# never committed. Package name is the consumer flavor's applicationId.
+json_key_file(ENV["PLAY_SERVICE_ACCOUNT_JSON"])
+package_name("com.claudia")

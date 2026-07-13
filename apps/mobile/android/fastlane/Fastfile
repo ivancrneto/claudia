@@ -1,0 +1,30 @@
+# Play Store upload for the consumer flavor. Signing uses the upload key (Play App Signing
+# holds the real app signing key). The AAB is built by CI before these lanes run.
+default_platform(:android)
+
+platform :android do
+  desc "Upload the consumer AAB to the Play internal track"
+  lane :internal do
+    upload_to_play_store(
+      track: "internal",
+      aab: ENV["CONSUMER_AAB_PATH"],
+      release_status: "draft",
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+
+  desc "Promote the internal build to production (staged rollout)"
+  lane :promote do
+    upload_to_play_store(
+      track: "internal",
+      track_promote_to: "production",
+      rollout: "0.1",
+      skip_upload_aab: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+end

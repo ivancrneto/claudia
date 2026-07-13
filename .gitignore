@@ -28,5 +28,16 @@ claudia.env
 *.gguf
 *.bin
 
+# Android — never commit signing keys, Play creds, or build outputs
+*.jks
+*.keystore
+keystore.properties
+google-services.json
+play-service-account*.json
+apps/mobile/android/local.properties
+apps/mobile/android/**/build/
+*.aab
+*.apk
+
 # OS
 .DS_Store

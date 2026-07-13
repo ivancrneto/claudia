@@ -64,6 +64,18 @@ Incremental build phases. Each phase is independently demoable.
   needs no credentials (all stubs).
 - ⏳ Follow-ups: cloud secret-manager fetch script, GitHub Actions deploy via OIDC.
 
+## Android build & release ✅ (in progress)
+- ✅ Gradle build config with `kiosk` (APK, MDM/sideload) and `consumer` (AAB, Play) flavors;
+  manifest wires the Device Owner admin, boot receiver, and a11y fallback + reuses the kiosk
+  native modules.
+- ✅ Release signing from the environment only (Play App Signing + upload key from CI
+  secrets); nothing sensitive in the repo.
+- ✅ Tag-driven `android-release.yml`: derive version → build both flavors → kiosk APK to the
+  GitHub Release, consumer AAB to Play (fastlane). `tools/android_version.py` unit-tested.
+- ✅ `docs/ANDROID_RELEASE.md`, `.gitignore` hardened for keystores/Play creds/build outputs.
+- ⏳ Follow-ups: the React Native / voice UI mounted in `MainActivity`, screenshots/metadata
+  for Play, and a full Gradle build in CI (needs the Android SDK).
+
 ## Phase 4 — Personalization
 - Favorite team, per-user profiles (voice-match / PIN), budgets/quotas.
 - Analytics: `intent_used` events to measure the most-used asks.
