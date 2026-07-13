@@ -8,8 +8,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from .providers import LLMProvider, LocalAdapter, OpenAICompatAdapter
+from .providers import (
+    AnthropicAdapter,
+    GeminiAdapter,
+    LLMProvider,
+    LocalAdapter,
+    OpenAIAdapter,
+    OpenAICompatAdapter,
+)
 from .providers.base import ProviderConfig
+
+_ADAPTERS = {
+    "anthropic": AnthropicAdapter,
+    "openai": OpenAIAdapter,
+    "gemini": GeminiAdapter,
+    "openai_compat": OpenAICompatAdapter,
+}
 
 
 def select_brain(user: dict[str, Any]) -> LLMProvider:
@@ -22,14 +36,13 @@ def select_brain(user: dict[str, Any]) -> LLMProvider:
     if not brain:
         return LocalAdapter()
 
-    kind = brain.get("kind", "openai_compat")
-    if kind == "openai_compat":
-        return OpenAICompatAdapter(
-            ProviderConfig(
-                model=brain["model"],
-                base_url=brain.get("base_url"),
-                api_key=brain.get("api_key"),
-            )
+    adapter = _ADAPTERS.get(brain.get("kind", "openai_compat"))
+    if adapter is None:
+        return LocalAdapter()
+    return adapter(
+        ProviderConfig(
+            model=brain["model"],
+            base_url=brain.get("base_url"),
+            api_key=brain.get("api_key"),
         )
-    # Phase 3.5: "anthropic" | "openai" | "gemini" native adapters.
-    return LocalAdapter()
+    )
