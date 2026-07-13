@@ -15,9 +15,14 @@ Incremental build phases. Each phase is independently demoable.
 - Hybrid NLU router (fast intent grammar → LLM fallback).
 - Skills: music, weather, YouTube (device actions).
 
-## Phase 2 — Futebol
-- Team resolver (Série A/B + nicknames + fuzzy match, disambiguation).
-- `FootballProvider` (API-Football) + scheduled fixture ingestion worker.
+## Phase 2 — Futebol ✅ (in progress)
+- ✅ Team resolver: Série A roster + nicknames + article-stripping + fuzzy match, with
+  multi-club disambiguation (Tricolor / Leão / Alvinegro) resolved by favorite team.
+- ✅ `FootballProvider` interface with `APIFootballProvider` (API-Football; team-id
+  resolved by name and cached — no hardcoded third-party ids) and an offline `StubProvider`.
+- ✅ Fixture cache + `FixtureIngestionWorker`; gateway primes it at startup (cache-first).
+- ✅ PT-BR kickoff humanization ("hoje às 18h30", "amanhã", "no próximo sábado").
+- ⏳ Follow-ups: Redis-backed cache + cron schedule, per-club timezones, Série B + cups.
 
 ## Phase 2.5 — Kiosk hardening
 - Android Device Owner + Lock Task Mode; iOS Single App Mode + ASAM.
