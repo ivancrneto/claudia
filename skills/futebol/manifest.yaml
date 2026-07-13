@@ -1,0 +1,11 @@
+name: futebol
+locale: pt-BR
+intents:
+  - name: PROXIMO_JOGO
+    utterances:
+      - "quando o {time} joga"
+      - "quando é o próximo jogo do {time}"
+      - "que dia joga o {time}"
+      - "quando joga o {time}"
+    slots:
+      time: { type: BR_FOOTBALL_TEAM }

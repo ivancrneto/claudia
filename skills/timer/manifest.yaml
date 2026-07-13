@@ -1,0 +1,10 @@
+name: timer
+locale: pt-BR
+intents:
+  - name: SET_TIMER
+    utterances:
+      - "põe um timer de {duracao}"
+      - "coloca um timer de {duracao}"
+      - "marca {duracao}"
+    slots:
+      duracao: { type: DURATION }
