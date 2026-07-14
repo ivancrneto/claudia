@@ -2,19 +2,27 @@ package com.claudia
 
 import android.app.Activity
 import android.os.Bundle
+import android.webkit.WebView
 import com.claudia.kiosk.LockTaskController
 
 /**
- * Launcher activity. On the kiosk flavor it enters Lock Task Mode via the Device Owner
- * controller so the tablet can't be closed.
+ * Launcher activity. Loads the Claudia web client (served by the gateway) in a WebView so
+ * the device has a working text UI today; the native React Native / voice UI replaces this
+ * in a follow-up. On the kiosk flavor it also enters Lock Task Mode via the Device Owner.
  *
- * The React Native / voice UI is mounted here in a follow-up; this shell wires the native
- * kiosk lifecycle and gives the build config a real entry point.
+ * The backend URL comes from BuildConfig.CLAUDIA_URL (set with -PclaudiaUrl=... at build
+ * time; default is the emulator's host loopback).
  */
 class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val web = WebView(this)
+        web.settings.javaScriptEnabled = true
+        web.settings.domStorageEnabled = true
+        setContentView(web)
+        web.loadUrl(BuildConfig.CLAUDIA_URL)
+
         LockTaskController(this).takeIf { it.isDeviceOwner }?.lock(this)
     }
 }

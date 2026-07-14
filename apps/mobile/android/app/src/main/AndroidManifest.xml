@@ -7,7 +7,8 @@
 
     <application
         android:label="Claudia"
-        android:allowBackup="false">
+        android:allowBackup="false"
+        android:usesCleartextTraffic="true"><!-- dev/LAN over http; prod is https via Caddy -->
 
         <activity
             android:name=".MainActivity"

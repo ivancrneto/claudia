@@ -12,11 +12,20 @@ android {
     namespace "com.claudia"
     compileSdk 34
 
+    // Backend URL the WebView loads. Override at build time with -PclaudiaUrl=http://<ip>:8000/.
+    // Default is 10.0.2.2 — the Android emulator's alias for the host machine's localhost.
+    def claudiaUrl = project.hasProperty("claudiaUrl") ? project.claudiaUrl : "http://10.0.2.2:8000/"
+
     defaultConfig {
         minSdk 26
         targetSdk 34
         versionName appVersionName
         versionCode appVersionCode
+        buildConfigField "String", "CLAUDIA_URL", "\"${claudiaUrl}\""
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     // Release signing pulls entirely from the environment — the upload keystore is

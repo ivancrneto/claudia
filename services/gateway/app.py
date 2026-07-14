@@ -25,6 +25,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect  # noqa: E402
+from fastapi.responses import HTMLResponse  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
 from services.analytics import MemoryAnalytics, PostHogAnalytics  # noqa: E402
@@ -142,6 +143,53 @@ class ProfileIn(BaseModel):
     city: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+
+
+_INDEX_HTML = """<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Claudia</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,sans-serif; background:#0f1115; color:#e8eaed;
+         display:flex; flex-direction:column; height:100dvh; }
+  header { padding:14px 16px; font-weight:600; border-bottom:1px solid #23262d; }
+  #log { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }
+  .msg { max-width:82%; padding:10px 13px; border-radius:14px; line-height:1.35; white-space:pre-wrap; }
+  .me { align-self:flex-end; background:#2b6cff; color:#fff; border-bottom-right-radius:4px; }
+  .bot { align-self:flex-start; background:#1b1e25; border:1px solid #23262d; border-bottom-left-radius:4px; }
+  .act { align-self:flex-start; font-size:12px; color:#9aa4b2; padding:2px 4px; }
+  form { display:flex; gap:8px; padding:12px; border-top:1px solid #23262d; }
+  input { flex:1; padding:12px 14px; border-radius:12px; border:1px solid #2a2e37; background:#151821; color:#e8eaed; font-size:16px; }
+  button { padding:12px 16px; border:0; border-radius:12px; background:#2b6cff; color:#fff; font-size:16px; }
+</style></head><body>
+<header>Claudia</header>
+<div id="log"><div class="msg bot">Oi! Pergunta algo: "quando o Bahia joga", "toca Bruno Mars", "como está o tempo"…</div></div>
+<form id="f"><input id="t" autocomplete="off" placeholder="Fale com a Claudia…" autofocus><button>Enviar</button></form>
+<script>
+  const log = document.getElementById('log'), f = document.getElementById('f'), t = document.getElementById('t');
+  const add = (text, cls) => { const d = document.createElement('div'); d.className = 'msg ' + cls; d.textContent = text; log.appendChild(d); log.scrollTop = log.scrollHeight; return d; };
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = t.value.trim(); if (!text) return;
+    add(text, 'me'); t.value = '';
+    try {
+      const r = await fetch('/dev/handle', { method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ text, user: { user_id: 'device' } }) });
+      const data = await r.json();
+      add(data.speech || '(sem resposta)', 'bot');
+      (data.actions || []).forEach(a => add('⚙ ' + a.type + (a.params && a.params.query ? ': ' + a.params.query : ''), 'act'));
+    } catch (err) { add('Erro ao falar com o servidor: ' + err, 'bot'); }
+  });
+</script></body></html>"""
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index() -> str:
+    """Minimal web client — usable from a phone browser or the app's WebView."""
+    return _INDEX_HTML
 
 
 @app.get("/health")
