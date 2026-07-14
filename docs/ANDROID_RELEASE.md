@@ -29,33 +29,45 @@ keytool -genkeypair -v -keystore upload.keystore -alias claudia-upload \
 base64 -w0 upload.keystore   # paste into the UPLOAD_KEYSTORE_BASE64 secret
 ```
 
+## Release runs on GitHub Actions
+
+The signed Android release runs on **GitHub Actions**
+([`.github/workflows/android-release.yml`](../.github/workflows/android-release.yml)),
+alongside the PR CI (tests + secret-scan).
+
 ## Required GitHub Actions secrets (names only)
 
 | Secret | Purpose |
 |---|---|
-| `UPLOAD_KEYSTORE_BASE64` | base64 of the upload keystore |
-| `UPLOAD_STORE_PASSWORD` | keystore password |
-| `UPLOAD_KEY_ALIAS` | upload key alias |
-| `UPLOAD_KEY_PASSWORD` | upload key password |
-| `PLAY_SERVICE_ACCOUNT_JSON_B64` | base64 of the Play service-account JSON (Play upload) |
+| `ANDROID_KEYSTORE_BASE64` | base64 of the upload keystore |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore store password |
+| `ANDROID_KEY_ALIAS` | upload key alias |
+| `ANDROID_KEY_PASSWORD` | upload key password |
+| `PLAY_SERVICE_ACCOUNT_JSON_B64` | *(optional)* base64 Play service-account JSON — enables the Play upload |
 
-None of these are in the repo; the `secret-scan` CI gate keeps it that way.
+None of these are in the repo; the `secret-scan` CI gate keeps it that way. `CLAUDIA_URL`
+(the WebView backend baked into the app) is a non-secret **repo variable** (`vars.CLAUDIA_URL`).
 
 ## Versioning
 
 `versionName` / `versionCode` are derived from the release **tag** by
 [`tools/android_version.py`](../tools/android_version.py) — never hand-edited.
-`vMAJOR.MINOR.PATCH` → code `MAJOR*10000 + MINOR*100 + PATCH` (monotonic across bumps).
+`vMAJOR.MINOR.PATCH` → code `MAJOR*10000 + MINOR*100 + PATCH` (monotonic across bumps),
+passed to Gradle as `-PversionName` / `-PversionCode`.
 
 ## Releasing
 
-1. Tag the release: `git tag v1.4.2 && git push --tags`.
-2. [`.github/workflows/android-release.yml`](../.github/workflows/android-release.yml) then:
+1. Tag the release: `git tag v1.4.2 && git push --tags` (or run the workflow manually with a
+   `tag` input).
+2. The workflow then:
    - derives the version from the tag,
+   - provisions the Android SDK + Gradle 8.9,
    - decodes the upload keystore from the secret,
-   - builds `assembleKioskRelease` (APK) and `bundleConsumerRelease` (AAB),
-   - attaches the **kiosk APK** to the GitHub Release (for MDM/sideload),
-   - uploads the **consumer AAB** to the Play **internal** track via fastlane.
+   - builds `assembleKioskRelease` (APK) + `bundleConsumerRelease` (AAB), signed via the
+     `CLAUDIA_UPLOAD_*` env the Gradle `signingConfig` reads,
+   - uploads both as a workflow artifact, attaches the **kiosk APK** to the GitHub Release,
+   - uploads the **consumer AAB** to the Play **internal** track via fastlane (when
+     `PLAY_SERVICE_ACCOUNT_JSON_B64` is set).
 3. Promote to production when ready: run the `promote` fastlane lane (staged rollout).
 
 ## Kiosk distribution
@@ -66,6 +78,6 @@ Device-Owner-provisioned device — see [`ARCHITECTURE.md`](ARCHITECTURE.md) §7
 
 ## Note
 
-A full Gradle build needs the Android SDK and isn't run in the backend CI or this
-environment — only `tools/android_version.py` is unit-tested here. The release workflow runs
-the real build on a GitHub-hosted runner with the SDK installed.
+A full Gradle build needs the Android SDK and isn't run in the backend `test` CI or this
+environment — only `tools/android_version.py` is unit-tested. The real APK/AAB build runs on
+the GitHub-hosted runner in the release workflow.

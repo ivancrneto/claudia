@@ -78,12 +78,21 @@ Incremental build phases. Each phase is independently demoable.
   native modules.
 - ✅ Release signing from the environment only (Play App Signing + upload key from CI
   secrets); nothing sensitive in the repo.
-- ✅ Tag-driven `android-release.yml`: derive version → build both flavors → kiosk APK to the
-  GitHub Release, consumer AAB to Play (fastlane). `tools/android_version.py` unit-tested.
+- ✅ Tag-driven **GitHub Actions** `android-release.yml`: derive version → provision SDK +
+  Gradle → build both flavors (signed) → artifact + kiosk APK to the GitHub Release +
+  consumer AAB to Play (fastlane). Secrets `ANDROID_KEYSTORE_*` / `PLAY_SERVICE_ACCOUNT_JSON_B64`;
+  `CLAUDIA_URL` repo var. `tools/android_version.py` unit-tested.
 - ✅ `docs/ANDROID_RELEASE.md`, `.gitignore` hardened for keystores/Play creds/build outputs.
 - ⏳ Follow-ups: the React Native / voice UI mounted in `MainActivity`, screenshots/metadata
   for Play, and a full Gradle build in CI (needs the Android SDK).
 
-## Phase 4 — Personalization
-- Favorite team, per-user profiles (voice-match / PIN), budgets/quotas.
-- Analytics: `intent_used` events to measure the most-used asks.
+## Phase 4 — Personalization ✅ (in progress)
+- ✅ Per-user `Profile` (favorite team, locale, city, coords) merged into the turn context;
+  request values override the stored profile. Powers futebol favorite-team disambiguation
+  and weather location. `POST /profile` upserts.
+- ✅ Analytics: pipeline emits an **anonymized** `intent_used` event per turn (intent /
+  source / locale only — no transcript, no PII). Sinks: `MemoryAnalytics`, `PostHogAnalytics`
+  (HTTP injected, errors swallowed), `NullAnalytics`. `GET /dev/stats` shows the most-used
+  asks — the assistant measuring itself.
+- ⏳ Follow-ups: voice-match / spoken-PIN identification, per-user budgets/quotas, Postgres
+  profile store.
