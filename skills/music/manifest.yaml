@@ -1,0 +1,11 @@
+name: music
+locale: pt-BR
+intents:
+  - name: PLAY_MUSIC
+    utterances:
+      - "toca {consulta}"
+      - "tocar {consulta}"
+      - "coloca {consulta} pra tocar"
+      - "põe uma música do {consulta}"
+    slots:
+      consulta: { type: FREE_TEXT }
