@@ -1,0 +1,12 @@
+name: youtube
+locale: pt-BR
+intents:
+  - name: OPEN_YOUTUBE
+    utterances:
+      - "abre o youtube"
+      - "abrir o youtube"
+      - "toca {consulta} no youtube"
+      - "procura {consulta} no youtube"
+      - "youtube {consulta}"
+    slots:
+      consulta: { type: FREE_TEXT }

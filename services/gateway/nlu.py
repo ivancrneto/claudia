@@ -15,12 +15,22 @@ def _norm(s: str) -> str:
     return "".join(c for c in s if not unicodedata.combining(c))
 
 
-# (intent, slot_extractors) keyed by simple keyword rules. Order matters.
+# (intent, pattern). Order matters — more specific rules first. YouTube must beat the
+# generic "toca {consulta}" music rule, and the timer rule (needs "timer de") is safe first.
 _RULES = [
     ("PROXIMO_JOGO", re.compile(r"quando\s+(?:o\s+|e\s+o\s+proximo\s+jogo\s+do\s+)?(?P<time>.+?)\s+joga")),
     ("PROXIMO_JOGO", re.compile(r"quando\s+joga\s+(?:o\s+)?(?P<time>.+)")),
     ("SET_TIMER", re.compile(r"(?:poe|coloca|marca).*?timer\s+de\s+(?P<duracao>.+)")),
+    # YouTube (before music)
+    ("OPEN_YOUTUBE", re.compile(r"(?:toca|tocar|procura|coloca)\s+(?P<consulta>.+?)\s+no\s+youtube")),
+    ("OPEN_YOUTUBE", re.compile(r"(?:abre|abrir)\s+(?:o\s+)?youtube")),
+    ("OPEN_YOUTUBE", re.compile(r"youtube\s+(?P<consulta>.+)")),
+    ("OPEN_YOUTUBE", re.compile(r"youtube")),
     ("GET_WEATHER", re.compile(r"(tempo|previsao|chover|temperatura)")),
+    # Music (generic "toca …" last, so it doesn't swallow the more specific intents)
+    ("PLAY_MUSIC", re.compile(r"coloca\s+(?P<consulta>.+?)\s+pra\s+tocar")),
+    ("PLAY_MUSIC", re.compile(r"poe\s+uma\s+musica\s+do\s+(?P<consulta>.+)")),
+    ("PLAY_MUSIC", re.compile(r"(?:toca|tocar)\s+(?P<consulta>.+)")),
 ]
 
 

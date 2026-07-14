@@ -36,8 +36,10 @@ from skills.futebol.handler import FutebolSkill  # noqa: E402
 from skills.futebol.ingestion import FixtureIngestionWorker, InMemoryFixtureCache  # noqa: E402
 from skills.futebol.provider import APIFootballProvider, StubProvider  # noqa: E402
 from skills.futebol.teams import TEAMS  # noqa: E402
+from skills.music.handler import MusicSkill  # noqa: E402
 from skills.timer.handler import TimerSkill  # noqa: E402
 from skills.weather.handler import WeatherSkill  # noqa: E402
+from skills.youtube.handler import YouTubeSkill  # noqa: E402
 
 settings = Settings.from_env()
 _FUTEBOL_CACHE = InMemoryFixtureCache()
@@ -61,7 +63,13 @@ def _make_tts():
 
 _football = _football_provider()
 dispatcher = Dispatcher(
-    [TimerSkill(), WeatherSkill(), FutebolSkill(provider=_football, cache=_FUTEBOL_CACHE)]
+    [
+        TimerSkill(),
+        WeatherSkill(),
+        YouTubeSkill(),
+        MusicSkill(),
+        FutebolSkill(provider=_football, cache=_FUTEBOL_CACHE),
+    ]
 )
 pipeline = VoicePipeline(dispatcher, stt=_make_stt(), tts=_make_tts())
 

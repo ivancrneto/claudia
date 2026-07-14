@@ -17,7 +17,15 @@ Incremental build phases. Each phase is independently demoable.
   `EchoTextSTT`/`FixedSTT`. TTS adapters: `PiperTTS` (stubbed) + offline `StubTTS`.
 - ✅ `HybridRouter`: fast grammar first, optional LLM classifier on a miss, else brain Q&A.
 - ✅ Gateway endpoints: `POST /dev/turn` (base64 audio) and `WS /ws/voice` (binary frames).
-- ⏳ Follow-ups: real faster-whisper/Piper decode, Open-Meteo weather, YouTube device action.
+- ⏳ Follow-ups: real faster-whisper/Piper decode.
+
+## Core skills — the common asks ✅
+- ✅ **Weather**: real Open-Meteo (free, no key), WMO code → PT-BR, forecast spoken from the
+  device's location; injectable HTTP so it's tested offline.
+- ✅ **YouTube**: `OPEN_YOUTUBE` → `open_youtube` device action (with/without a search query).
+- ✅ **Music**: `PLAY_MUSIC` → `play_music` device action.
+- ✅ NLU routes them deterministically (YouTube before the generic "toca …" music rule);
+  timer + futebol round out the four most-common asks.
 
 ## Phase 2 — Futebol ✅ (in progress)
 - ✅ Team resolver: Série A roster + nicknames + article-stripping + fuzzy match, with
