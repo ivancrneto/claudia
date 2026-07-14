@@ -84,6 +84,13 @@ Incremental build phases. Each phase is independently demoable.
 - ⏳ Follow-ups: the React Native / voice UI mounted in `MainActivity`, screenshots/metadata
   for Play, and a full Gradle build in CI (needs the Android SDK).
 
-## Phase 4 — Personalization
-- Favorite team, per-user profiles (voice-match / PIN), budgets/quotas.
-- Analytics: `intent_used` events to measure the most-used asks.
+## Phase 4 — Personalization ✅ (in progress)
+- ✅ Per-user `Profile` (favorite team, locale, city, coords) merged into the turn context;
+  request values override the stored profile. Powers futebol favorite-team disambiguation
+  and weather location. `POST /profile` upserts.
+- ✅ Analytics: pipeline emits an **anonymized** `intent_used` event per turn (intent /
+  source / locale only — no transcript, no PII). Sinks: `MemoryAnalytics`, `PostHogAnalytics`
+  (HTTP injected, errors swallowed), `NullAnalytics`. `GET /dev/stats` shows the most-used
+  asks — the assistant measuring itself.
+- ⏳ Follow-ups: voice-match / spoken-PIN identification, per-user budgets/quotas, Postgres
+  profile store.

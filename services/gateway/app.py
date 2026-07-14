@@ -27,8 +27,10 @@ if str(_ROOT) not in sys.path:
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
+from services.analytics import MemoryAnalytics, PostHogAnalytics  # noqa: E402
 from services.config import Settings  # noqa: E402
 from services.gateway.pipeline import VoicePipeline  # noqa: E402
+from services.profiles import InMemoryProfileStore, Profile  # noqa: E402
 from services.stt import EchoTextSTT, FasterWhisperSTT  # noqa: E402
 from services.tts import PiperTTS, StubTTS  # noqa: E402
 from skills._sdk import Dispatcher  # noqa: E402
@@ -61,7 +63,16 @@ def _make_tts():
     return PiperTTS() if settings.tts_backend == "piper" else StubTTS()
 
 
+def _make_analytics():
+    # PostHog when a capture key is set; otherwise the in-memory sink (powers /dev/stats).
+    if settings.posthog_api_key:
+        return PostHogAnalytics(settings.posthog_api_key, host=settings.posthog_host)
+    return MemoryAnalytics()
+
+
 _football = _football_provider()
+profiles = InMemoryProfileStore()
+analytics = _make_analytics()
 dispatcher = Dispatcher(
     [
         TimerSkill(),
@@ -71,7 +82,19 @@ dispatcher = Dispatcher(
         FutebolSkill(provider=_football, cache=_FUTEBOL_CACHE),
     ]
 )
-pipeline = VoicePipeline(dispatcher, stt=_make_stt(), tts=_make_tts())
+pipeline = VoicePipeline(dispatcher, stt=_make_stt(), tts=_make_tts(), analytics=analytics)
+
+
+def _resolve_context(body_user: dict) -> dict:
+    """Merge a stored profile (by user_id) under the request-provided context."""
+    ctx: dict = {}
+    user_id = body_user.get("user_id")
+    if user_id:
+        profile = profiles.get(user_id)
+        if profile:
+            ctx.update(profile.to_context())
+    ctx.update(body_user)  # request values override the stored profile
+    return ctx
 
 
 async def _prime_fixtures() -> None:
@@ -112,6 +135,15 @@ class TurnOut(HandleOut):
     audio_b64: str
 
 
+class ProfileIn(BaseModel):
+    user_id: str
+    locale: str = "pt-BR"
+    favorite_team_id: int | None = None
+    city: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+
+
 @app.get("/health")
 async def health() -> dict:
     return {
@@ -124,7 +156,7 @@ async def health() -> dict:
 
 @app.post("/dev/handle", response_model=HandleOut)
 async def dev_handle(body: HandleIn) -> HandleOut:
-    r = await pipeline.run_text(body.text, body.user)
+    r = await pipeline.run_text(body.text, _resolve_context(body.user))
     return HandleOut(
         transcript=r.transcript,
         intent=r.intent,
@@ -137,7 +169,7 @@ async def dev_handle(body: HandleIn) -> HandleOut:
 @app.post("/dev/turn", response_model=TurnOut)
 async def dev_turn(body: TurnIn) -> TurnOut:
     audio = base64.b64decode(body.audio_b64)
-    r = await pipeline.run_audio(audio, body.user)
+    r = await pipeline.run_audio(audio, _resolve_context(body.user))
     return TurnOut(
         transcript=r.transcript,
         intent=r.intent,
@@ -146,6 +178,29 @@ async def dev_turn(body: TurnIn) -> TurnOut:
         source=r.source,
         audio_b64=base64.b64encode(r.audio).decode("ascii"),
     )
+
+
+@app.post("/profile")
+async def upsert_profile(body: ProfileIn) -> dict:
+    profile = profiles.save(
+        Profile(
+            user_id=body.user_id,
+            locale=body.locale,
+            favorite_team_id=body.favorite_team_id,
+            city=body.city,
+            latitude=body.latitude,
+            longitude=body.longitude,
+        )
+    )
+    return {"status": "ok", "context": profile.to_context()}
+
+
+@app.get("/dev/stats")
+async def dev_stats(n: int = 10) -> dict:
+    """The most-used asks so far (in-memory analytics only)."""
+    if isinstance(analytics, MemoryAnalytics):
+        return {"top_intents": analytics.top_intents(n), "total": len(analytics.events)}
+    return {"detail": "stats available only with the in-memory analytics sink"}
 
 
 @app.websocket("/ws/voice")

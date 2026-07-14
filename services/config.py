@@ -12,7 +12,7 @@ import os
 from dataclasses import dataclass, field
 
 # Env vars that hold secrets — redacted in logs and required in production.
-SECRET_KEYS = ("VAULT_KEY", "API_FOOTBALL_KEY")
+SECRET_KEYS = ("VAULT_KEY", "API_FOOTBALL_KEY", "POSTHOG_API_KEY")
 # Subset that MUST be present in production (others are optional features).
 REQUIRED_IN_PROD = ("VAULT_KEY",)
 
@@ -29,6 +29,8 @@ class Settings:
     api_football_key: str | None = None
     football_season: int = 2026
     vault_key: str | None = None     # Fernet key from the secret manager
+    posthog_api_key: str | None = None   # PostHog capture (write) key; optional
+    posthog_host: str = "https://us.i.posthog.com"
     gateway_host: str = "0.0.0.0"
     gateway_port: int = 8000
     _present_secrets: set[str] = field(default_factory=set, repr=False)
@@ -48,6 +50,8 @@ class Settings:
             api_football_key=e.get("API_FOOTBALL_KEY") or None,
             football_season=int(e.get("FOOTBALL_SEASON", "2026")),
             vault_key=e.get("VAULT_KEY") or None,
+            posthog_api_key=e.get("POSTHOG_API_KEY") or None,
+            posthog_host=e.get("POSTHOG_HOST", "https://us.i.posthog.com"),
             gateway_host=e.get("GATEWAY_HOST", "0.0.0.0"),
             gateway_port=int(e.get("GATEWAY_PORT", "8000")),
             _present_secrets=present,

@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from services.analytics.base import Analytics, NullAnalytics
 from services.brain.providers.base import Message
 from services.brain.router import select_brain
 from services.gateway.hybrid import HybridRouter
@@ -36,12 +37,14 @@ class VoicePipeline:
         tts: TTS,
         router: HybridRouter | None = None,
         brain_selector: Callable[[dict], Any] = select_brain,
+        analytics: Analytics | None = None,
     ) -> None:
         self._dispatcher = dispatcher
         self._stt = stt
         self._tts = tts
         self._router = router or HybridRouter()
         self._select_brain = brain_selector
+        self._analytics = analytics or NullAnalytics()
 
     async def run_audio(self, audio: bytes, user: dict | None = None) -> TurnResult:
         transcript = await self._stt.transcribe(audio)
@@ -72,6 +75,14 @@ class VoicePipeline:
             source = "brain"
 
         audio = await self._tts.synthesize(speech) if speech else b""
+
+        # Anonymized: intent/source/locale only — no transcript, no PII.
+        await self._analytics.track(
+            "intent_used",
+            {"intent": intent, "source": source, "locale": user.get("locale", "pt-BR")},
+            distinct_id=user.get("user_id", "anonymous"),
+        )
+
         return TurnResult(
             transcript=transcript,
             intent=intent,
