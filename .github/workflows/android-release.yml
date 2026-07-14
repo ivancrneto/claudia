@@ -1,0 +1,105 @@
+name: Android Release
+
+# Tag-driven signed Android release. Builds the kiosk APK (MDM/sideload) and the consumer
+# AAB (Play), signs with the upload key, attaches the APK to the GitHub Release, and (when a
+# Play service account is configured) uploads the AAB to Play internal testing via fastlane.
+# All signing/Play credentials come from GitHub Actions secrets — never the repo.
+#
+# Required secrets (names align with the org's convention):
+#   ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
+# Optional (enables the Play upload):
+#   PLAY_SERVICE_ACCOUNT_JSON_B64
+# Optional repo variable: CLAUDIA_URL (the WebView backend baked into the app).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag to build (e.g. v1.4.2)"
+        required: true
+
+permissions:
+  contents: write   # attach the APK to the GitHub Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      PLAY_JSON_B64: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON_B64 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Derive version from tag
+        id: version
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          python tools/android_version.py "$TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Restore upload keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.keystore"
+          echo "CLAUDIA_UPLOAD_STORE_FILE=$RUNNER_TEMP/upload.keystore" >> "$GITHUB_ENV"
+
+      - name: Build kiosk APK + consumer AAB (signed)
+        working-directory: apps/mobile/android
+        env:
+          CLAUDIA_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          CLAUDIA_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CLAUDIA_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          CLAUDIA_URL: ${{ vars.CLAUDIA_URL || 'https://claudia.example.com/' }}
+        run: |
+          gradle :app:assembleKioskRelease :app:bundleConsumerRelease \
+            -PclaudiaUrl="$CLAUDIA_URL" \
+            -PversionName=${{ steps.version.outputs.VERSION_NAME }} \
+            -PversionCode=${{ steps.version.outputs.VERSION_CODE }} \
+            --no-daemon --stacktrace
+
+      - name: Collect artifacts
+        working-directory: apps/mobile/android
+        run: |
+          V="${{ steps.version.outputs.VERSION_NAME }}"
+          mkdir -p "$RUNNER_TEMP/out"
+          cp app/build/outputs/apk/kiosk/release/app-kiosk-release.apk "$RUNNER_TEMP/out/claudia-$V-kiosk.apk"
+          cp app/build/outputs/bundle/consumerRelease/app-consumer-release.aab "$RUNNER_TEMP/out/claudia-$V-consumer.aab"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: claudia-android-${{ steps.version.outputs.VERSION_NAME }}
+          path: ${{ runner.temp }}/out/*
+
+      # Kiosk APK -> GitHub Release asset (for MDM/sideload). Tag pushes only.
+      - name: Attach kiosk APK to the GitHub Release
+        if: ${{ github.ref_type == 'tag' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ runner.temp }}/out/claudia-*-kiosk.apk
+
+      # Consumer AAB -> Play internal track via fastlane, only when configured.
+      - name: Upload consumer AAB to Play (internal)
+        if: ${{ env.PLAY_JSON_B64 != '' }}
+        working-directory: apps/mobile/android
+        env:
+          CONSUMER_AAB_PATH: ${{ runner.temp }}/out/claudia-${{ steps.version.outputs.VERSION_NAME }}-consumer.aab
+        run: |
+          echo "$PLAY_JSON_B64" | base64 -d > "$RUNNER_TEMP/play.json"
+          export PLAY_SERVICE_ACCOUNT_JSON="$RUNNER_TEMP/play.json"
+          gem install --no-document fastlane
+          fastlane internal
