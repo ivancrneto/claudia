@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# Build SIGNED Android release artifacts for Claudia and (optionally) ship the AAB to
+# Google Play internal testing. Produces:
+#   - claudia-<version>-kiosk.apk     (MDM / sideload; Device Owner + Lock Task)
+#   - claudia-<version>-consumer.aab  (Google Play)
+# both signed with the upload key, and attached to the Buildkite build via artifact_paths.
+#
+# Based on izap's .buildkite/steps/builds/build_dash_apk. Buildkite agents have Docker but
+# no JDK / Android SDK, so the whole build runs inside an eclipse-temurin:21 container: the
+# agents are themselves containerized and use the host Docker daemon, so the checkout is NOT
+# bind-mountable (a `-v` resolves against the host fs). We therefore `docker cp` the checkout
+# in and copy the built artifacts back out. Signing creds are baked into the (never-echoed)
+# inner script and exported only inside the container, so they never appear in `docker
+# inspect` or a process listing.
+#
+# Secrets (Buildkite CLUSTER secret store, fetched with `buildkite-agent secret get` — same
+# names as izap):
+#   ANDROID_KEYSTORE_BASE64      base64 of the upload keystore (.jks)
+#   ANDROID_KEYSTORE_PASSWORD    keystore store password
+#   ANDROID_KEY_ALIAS            signing key alias
+#   ANDROID_KEY_PASSWORD         signing key password
+#   PLAY_SERVICE_ACCOUNT_JSON_B64  (optional) base64 Play service-account JSON — SET => the
+#                                  AAB is uploaded to Play internal; UNSET => build only.
+# Config (build env):
+#   CLAUDIA_URL   backend the WebView loads, baked into the app (default below).
+#
+# NOTE (org standard): izap uploads to Play *keylessly* via Workload Identity Federation
+# (no service-account key). This step uses the simpler service-account-JSON path that
+# Claudia's fastlane already supports; to adopt keyless WIF, port the OIDC block from
+# izap's build_dash_apk.
+set -euo pipefail
+
+CHECKOUT="${BUILDKITE_BUILD_CHECKOUT_PATH:-$(pwd)}"
+cd "$CHECKOUT"
+ANDROID_DIR="apps/mobile/android"
+
+# versionName from the release tag (vMAJOR.MINOR.PATCH); versionCode from the monotonic
+# Buildkite build number (izap idiom). A manual (untagged) build gets a -dev name.
+TAG="${BUILDKITE_TAG:-}"
+if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  VERSION_NAME="${TAG#v}"
+else
+  VERSION_NAME="${TAG#v}"; [ -n "$VERSION_NAME" ] || VERSION_NAME="0.0.0-dev.${BUILDKITE_BUILD_NUMBER:-0}"
+fi
+VERSION_CODE="${BUILDKITE_BUILD_NUMBER:-1}"
+CLAUDIA_URL="${CLAUDIA_URL:-https://claudia.example.com/}"
+
+echo "--- :android: Claudia ${VERSION_NAME} (versionCode ${VERSION_CODE}) -> ${CLAUDIA_URL}"
+
+# Pull any missing secrets from the agent secret store (mirrors izap's hydrate_secrets).
+hydrate_secrets() {
+  command -v buildkite-agent >/dev/null 2>&1 || return 0
+  local n v
+  for n in "$@"; do
+    [ -n "${!n:-}" ] && continue
+    v="$(buildkite-agent secret get "$n" 2>/dev/null)" || true
+    [ -n "$v" ] && export "$n=$v"
+  done
+  return 0
+}
+hydrate_secrets \
+  ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD \
+  PLAY_SERVICE_ACCOUNT_JSON_B64
+
+# Report which secrets resolved — names + byte sizes only, never values.
+echo "--- :mag: secret availability (cluster=${BUILDKITE_CLUSTER_NAME:-${BUILDKITE_CLUSTER_ID:-?}}, queue=${BUILDKITE_AGENT_META_DATA_QUEUE:-?})"
+for n in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD PLAY_SERVICE_ACCOUNT_JSON_B64; do
+  _v="${!n:-}"
+  if [ -n "$_v" ]; then echo "  ${n}: present (${#_v} bytes)"; else echo "  ${n}: MISSING"; fi
+done
+
+MISSING=""
+for req in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+  [ -n "${!req:-}" ] || MISSING="${MISSING} ${req}"
+done
+if [ -n "$MISSING" ]; then
+  echo "^^^ +++"
+  echo ":x: Missing required Buildkite secret(s):${MISSING}"
+  echo "They must be CLUSTER secrets in the SAME cluster as the agents on this pipeline's queue."
+  exit 1
+fi
+
+PLAY_CONFIGURED=0
+[ -n "${PLAY_SERVICE_ACCOUNT_JSON_B64:-}" ] && PLAY_CONFIGURED=1
+[ "$PLAY_CONFIGURED" -eq 0 ] && echo "--- :information_source: PLAY_SERVICE_ACCOUNT_JSON_B64 unset; will build the AAB but skip the Play upload."
+
+# Keystore + inner script carry secrets → keep them in /tmp (never under the checkout, so
+# they are not tarred into the container copy nor matched by artifact_paths) and remove on exit.
+INNER_SCRIPT="$(mktemp /tmp/claudia-android-build.XXXXXX)"
+KEYSTORE_HOST="$(mktemp /tmp/claudia-release-keystore.XXXXXX)"
+PLAY_JSON_HOST="$(mktemp /tmp/claudia-play-sa.XXXXXX)"
+CONTAINER="claudia-android-${BUILDKITE_BUILD_ID:-x}-${BUILDKITE_JOB_ID:-$$}"
+CONTAINER="${CONTAINER//[^A-Za-z0-9_.-]/_}"
+cleanup() {
+  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  rm -f "$INNER_SCRIPT" "$KEYSTORE_HOST" "$PLAY_JSON_HOST" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > "$KEYSTORE_HOST" 2>/dev/null; then
+  echo "^^^ +++"; echo ":x: ANDROID_KEYSTORE_BASE64 failed to base64-decode."; exit 1
+fi
+[ -s "$KEYSTORE_HOST" ] || { echo "^^^ +++"; echo ":x: decoded keystore is empty."; exit 1; }
+if [ "$PLAY_CONFIGURED" -eq 1 ]; then
+  printf '%s' "$PLAY_SERVICE_ACCOUNT_JSON_B64" | tr -d '[:space:]' | base64 -d > "$PLAY_JSON_HOST" 2>/dev/null || {
+    echo "^^^ +++"; echo ":x: PLAY_SERVICE_ACCOUNT_JSON_B64 failed to base64-decode."; exit 1; }
+fi
+
+# Secret values are interpolated here on the agent and baked into the inner script
+# (unquoted heredoc); container-runtime variables are escaped with \$. The inner body is
+# never echoed. Inside the container: checkout -> /workdir, keystore -> /tmp/release.keystore,
+# Play SA JSON -> /tmp/play-sa.json, artifacts collected in /workdir/out.
+cat > "$INNER_SCRIPT" <<INNER
+#!/usr/bin/env bash
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+export ANDROID_HOME=/opt/android-sdk
+export ANDROID_SDK_ROOT=/opt/android-sdk
+export PATH="\$ANDROID_HOME/cmdline-tools/latest/bin:\$ANDROID_HOME/platform-tools:/opt/gradle/gradle-8.9/bin:\$PATH"
+
+VERSION_NAME='${VERSION_NAME}'
+VERSION_CODE='${VERSION_CODE}'
+CLAUDIA_URL='${CLAUDIA_URL}'
+PLAY_CONFIGURED='${PLAY_CONFIGURED}'
+# Signing creds baked here (never container env / docker inspect); exported for gradle,
+# which Claudia's app/build.gradle reads via System.getenv (not -P, so not in process args).
+export CLAUDIA_UPLOAD_STORE_FILE=/tmp/release.keystore
+export CLAUDIA_UPLOAD_STORE_PASSWORD='${ANDROID_KEYSTORE_PASSWORD}'
+export CLAUDIA_UPLOAD_KEY_ALIAS='${ANDROID_KEY_ALIAS}'
+export CLAUDIA_UPLOAD_KEY_PASSWORD='${ANDROID_KEY_PASSWORD}'
+
+echo "--- :package: install tooling (curl, unzip, gradle, Android SDK)"
+apt-get update -qq
+apt-get install -y -qq --no-install-recommends curl unzip ca-certificates >/dev/null
+
+curl -fsSL https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle.zip
+mkdir -p /opt/gradle && unzip -q /tmp/gradle.zip -d /opt/gradle
+
+mkdir -p "\$ANDROID_HOME/cmdline-tools"
+curl -fsSL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/cmdline.zip
+unzip -q /tmp/cmdline.zip -d "\$ANDROID_HOME/cmdline-tools"
+mv "\$ANDROID_HOME/cmdline-tools/cmdline-tools" "\$ANDROID_HOME/cmdline-tools/latest"
+yes | sdkmanager --licenses >/dev/null 2>&1 || true
+sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" >/dev/null
+
+mkdir -p /workdir/out
+cd /workdir/${ANDROID_DIR}
+
+echo "+++ :hammer_and_wrench: assemble kiosk APK + bundle consumer AAB (signed)"
+gradle :app:assembleKioskRelease :app:bundleConsumerRelease \
+  -PclaudiaUrl="\${CLAUDIA_URL}" -PversionName="\${VERSION_NAME}" -PversionCode="\${VERSION_CODE}" \
+  --no-daemon --stacktrace
+
+KIOSK_APK="claudia-\${VERSION_NAME}-kiosk.apk"
+CONSUMER_AAB="claudia-\${VERSION_NAME}-consumer.aab"
+cp app/build/outputs/apk/kiosk/release/app-kiosk-release.apk "/workdir/out/\${KIOSK_APK}"
+cp app/build/outputs/bundle/consumerRelease/app-consumer-release.aab "/workdir/out/\${CONSUMER_AAB}"
+"\$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "/workdir/out/\${KIOSK_APK}"
+echo "--- :white_check_mark: built \${KIOSK_APK} + \${CONSUMER_AAB}"
+
+if [ "\$PLAY_CONFIGURED" = "1" ]; then
+  echo "--- :rubygems: install Ruby + fastlane"
+  apt-get install -y -qq --no-install-recommends ruby-full build-essential >/dev/null
+  gem install --no-document fastlane >/dev/null
+  echo "--- :rocket: fastlane internal (upload AAB to Play internal track)"
+  export PLAY_SERVICE_ACCOUNT_JSON=/tmp/play-sa.json
+  export CONSUMER_AAB_PATH="/workdir/out/\${CONSUMER_AAB}"
+  ( cd /workdir/${ANDROID_DIR} && fastlane internal )
+  echo "--- :white_check_mark: uploaded \${CONSUMER_AAB} to Play internal track"
+else
+  echo "--- :warning: Play upload not configured; skipping internal-track upload."
+fi
+
+echo "--- :white_check_mark: Claudia Android build complete"
+INNER
+
+echo "--- :docker: run build in eclipse-temurin:21-jdk container (${CONTAINER})"
+IMAGE="eclipse-temurin:21-jdk-jammy"
+docker create --name "$CONTAINER" --workdir /workdir "$IMAGE" bash /tmp/build.sh >/dev/null
+
+# Copy the checkout into /workdir (agents are containerized; bind mounts don't work).
+if ! tar -C "$CHECKOUT" \
+      --exclude='./.git' --exclude='*/build' --exclude='./.gradle' \
+      -cf - . | docker cp - "$CONTAINER:/workdir"; then
+  echo "^^^ +++"; echo ":x: failed to copy checkout into the build container"; exit 1
+fi
+docker cp "$INNER_SCRIPT" "$CONTAINER:/tmp/build.sh"
+docker cp "$KEYSTORE_HOST" "$CONTAINER:/tmp/release.keystore"
+[ "$PLAY_CONFIGURED" -eq 1 ] && docker cp "$PLAY_JSON_HOST" "$CONTAINER:/tmp/play-sa.json"
+
+docker start -a "$CONTAINER"
+
+# Copy the signed artifacts back to the checkout so artifact_paths can upload them.
+docker cp "$CONTAINER:/workdir/out/." "$CHECKOUT/"
+echo "--- :arrow_up: Claudia APK + AAB ready (uploaded via artifact_paths)"

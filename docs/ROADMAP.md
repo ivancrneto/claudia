@@ -78,8 +78,10 @@ Incremental build phases. Each phase is independently demoable.
   native modules.
 - ✅ Release signing from the environment only (Play App Signing + upload key from CI
   secrets); nothing sensitive in the repo.
-- ✅ Tag-driven `android-release.yml`: derive version → build both flavors → kiosk APK to the
-  GitHub Release, consumer AAB to Play (fastlane). `tools/android_version.py` unit-tested.
+- ✅ **Buildkite** signed-release pipeline (modeled on izap's `.buildkite/`): block gate →
+  containerized SDK build in `eclipse-temurin` → both flavors → artifacts + optional Play
+  upload. Cluster secrets use izap's names. (Replaces the earlier GitHub Actions release;
+  PR CI stays on Actions.) `tools/android_version.py` unit-tested.
 - ✅ `docs/ANDROID_RELEASE.md`, `.gitignore` hardened for keystores/Play creds/build outputs.
 - ⏳ Follow-ups: the React Native / voice UI mounted in `MainActivity`, screenshots/metadata
   for Play, and a full Gradle build in CI (needs the Android SDK).

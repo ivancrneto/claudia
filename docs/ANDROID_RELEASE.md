@@ -29,33 +29,50 @@ keytool -genkeypair -v -keystore upload.keystore -alias claudia-upload \
 base64 -w0 upload.keystore   # paste into the UPLOAD_KEYSTORE_BASE64 secret
 ```
 
-## Required GitHub Actions secrets (names only)
+## Release runs on Buildkite
+
+The signed Android release runs on **Buildkite** (modeled on izap's `.buildkite/`), because
+its agents do the containerized SDK build. See [`.buildkite/README.md`](../.buildkite/README.md).
+PR CI (tests + secret-scan) stays on GitHub Actions.
+
+## Required Buildkite CLUSTER secrets (names only — same as izap)
 
 | Secret | Purpose |
 |---|---|
-| `UPLOAD_KEYSTORE_BASE64` | base64 of the upload keystore |
-| `UPLOAD_STORE_PASSWORD` | keystore password |
-| `UPLOAD_KEY_ALIAS` | upload key alias |
-| `UPLOAD_KEY_PASSWORD` | upload key password |
-| `PLAY_SERVICE_ACCOUNT_JSON_B64` | base64 of the Play service-account JSON (Play upload) |
+| `ANDROID_KEYSTORE_BASE64` | base64 of the upload keystore |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore store password |
+| `ANDROID_KEY_ALIAS` | upload key alias |
+| `ANDROID_KEY_PASSWORD` | upload key password |
+| `PLAY_SERVICE_ACCOUNT_JSON_B64` | *(optional)* base64 Play service-account JSON — enables the Play upload |
 
-None of these are in the repo; the `secret-scan` CI gate keeps it that way.
+Store them as **cluster** secrets in the same cluster as the agents on the pipeline's queue
+(`buildkite-agent secret get` can't see pipeline/env vars or other clusters). Nothing
+sensitive is in the repo. `CLAUDIA_URL` (the WebView backend) is a non-secret build env.
+
+> izap uploads to Play **keylessly** via Workload Identity Federation (no SA key). This
+> pipeline uses the simpler service-account-JSON path Claudia's fastlane already supports; to
+> adopt keyless WIF, port the OIDC block from izap's `steps/builds/build_dash_apk`.
 
 ## Versioning
 
-`versionName` / `versionCode` are derived from the release **tag** by
-[`tools/android_version.py`](../tools/android_version.py) — never hand-edited.
-`vMAJOR.MINOR.PATCH` → code `MAJOR*10000 + MINOR*100 + PATCH` (monotonic across bumps).
+`versionName` comes from the release **tag** (`vMAJOR.MINOR.PATCH`); `versionCode` is the
+monotonic `BUILDKITE_BUILD_NUMBER` (izap idiom). Both are passed to Gradle as
+`-PversionName` / `-PversionCode`. (`tools/android_version.py` still derives a code from a
+tag for local/other use and is unit-tested.)
 
 ## Releasing
 
-1. Tag the release: `git tag v1.4.2 && git push --tags`.
-2. [`.github/workflows/android-release.yml`](../.github/workflows/android-release.yml) then:
-   - derives the version from the tag,
-   - decodes the upload keystore from the secret,
-   - builds `assembleKioskRelease` (APK) and `bundleConsumerRelease` (AAB),
-   - attaches the **kiosk APK** to the GitHub Release (for MDM/sideload),
-   - uploads the **consumer AAB** to the Play **internal** track via fastlane.
+1. Tag the release: `git tag v1.4.2 && git push --tags` (or start a build with `BUILD_ANDROID=true`).
+2. [`.buildkite/pipeline.yml`](../.buildkite/pipeline.yml) uploads the release pipeline, which:
+   - shows a **block** step to approve the release,
+   - runs [`steps/builds/build_android`](../.buildkite/steps/builds/build_android) inside an
+     `eclipse-temurin:21` container (installs the Android SDK + Gradle, `docker cp`'s the
+     checkout in),
+   - builds `assembleKioskRelease` (APK) + `bundleConsumerRelease` (AAB), signed with the
+     upload key from the cluster secrets,
+   - attaches both to the Buildkite build via `artifact_paths`,
+   - uploads the **consumer AAB** to the Play **internal** track via fastlane (when
+     `PLAY_SERVICE_ACCOUNT_JSON_B64` is set).
 3. Promote to production when ready: run the `promote` fastlane lane (staged rollout).
 
 ## Kiosk distribution
@@ -67,5 +84,5 @@ Device-Owner-provisioned device — see [`ARCHITECTURE.md`](ARCHITECTURE.md) §7
 ## Note
 
 A full Gradle build needs the Android SDK and isn't run in the backend CI or this
-environment — only `tools/android_version.py` is unit-tested here. The release workflow runs
-the real build on a GitHub-hosted runner with the SDK installed.
+environment. The `.buildkite/` YAML and shell are syntax-checked here; the real APK/AAB build
+runs on a Buildkite agent with Docker.

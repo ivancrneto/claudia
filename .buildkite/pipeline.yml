@@ -1,0 +1,15 @@
+# Buildkite entrypoint. Claudia's PR CI (tests + secret-scan) runs on GitHub Actions;
+# Buildkite owns the signed Android release (agents with Docker do the container build).
+#
+# Uploads the Android release pipeline on a v* tag or a manual BUILD_ANDROID=true build;
+# otherwise it's a no-op.
+steps:
+  - label: ":pipeline: detect android release"
+    command: |
+      if [[ "${BUILDKITE_TAG:-}" == v* ]] || [[ "${BUILD_ANDROID:-}" == "true" ]]; then
+        buildkite-agent pipeline upload .buildkite/pipelines/android-release.yml
+      else
+        echo "No Android release trigger (need a v* tag or BUILD_ANDROID=true); nothing to do."
+      fi
+    agents:
+      queue: "default"
