@@ -10,7 +10,7 @@ def appVersionCode = project.hasProperty("versionCode") ? project.versionCode.to
 
 android {
     namespace "dev.gogix.claudia"
-    compileSdk 34
+    compileSdk 35
 
     // Backend URL the WebView loads. Override at build time with -PclaudiaUrl=http://<ip>:8000/.
     // Default is 10.0.2.2 — the Android emulator's alias for the host machine's localhost.
@@ -18,7 +18,7 @@ android {
 
     defaultConfig {
         minSdk 26
-        targetSdk 34
+        targetSdk 35
         versionName appVersionName
         versionCode appVersionCode
         buildConfigField "String", "CLAUDIA_URL", "\"${claudiaUrl}\""
