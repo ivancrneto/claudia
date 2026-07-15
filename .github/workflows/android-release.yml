@@ -5,11 +5,14 @@ name: Android Release
 # Play service account is configured) uploads the AAB to Play internal testing via fastlane.
 # All signing/Play credentials come from GitHub Actions secrets — never the repo.
 #
-# Required secrets (names align with the org's convention):
+# Required secrets:
 #   ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
-# Optional (enables the Play upload):
-#   PLAY_SERVICE_ACCOUNT_JSON_B64
+# Play upload is KEYLESS via Workload Identity Federation (the org blocks service-account
+# keys — iam.disableServiceAccountKeyCreation). Set these repo VARIABLES to enable it:
+#   GCP_WORKLOAD_IDENTITY_PROVIDER  projects/N/locations/global/workloadIdentityPools/POOL/providers/PROV
+#   GCP_PLAY_PUBLISHER_SA           play-publisher@PROJECT.iam.gserviceaccount.com
 # Optional repo variable: CLAUDIA_URL (the WebView backend baked into the app).
+# See docs/ANDROID_RELEASE.md for the one-time GCP + Play setup.
 on:
   push:
     tags: ["v*"]
@@ -21,12 +24,11 @@ on:
 
 permissions:
   contents: write   # attach the APK to the GitHub Release
+  id-token: write   # mint the OIDC token for keyless Google auth (WIF)
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    env:
-      PLAY_JSON_B64: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON_B64 }}
     steps:
       - uses: actions/checkout@v4
 
@@ -111,14 +113,23 @@ jobs:
         with:
           files: ${{ runner.temp }}/out/claudia-*-kiosk.apk
 
-      # Consumer AAB -> Play internal track via fastlane, only when configured.
+      # --- Keyless Play upload via Workload Identity Federation ---
+      # No service-account key (the org blocks key creation). GitHub mints an OIDC token,
+      # google-github-actions/auth exchanges it via GCP STS to impersonate the publisher SA
+      # and writes ADC creds; fastlane supply (>= 2.230) picks them up automatically. Runs
+      # only when the WIF repo variables are set.
+      - name: Authenticate to Google Cloud (keyless WIF)
+        if: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAY_PUBLISHER_SA }}
+
       - name: Upload consumer AAB to Play (internal)
-        if: ${{ env.PLAY_JSON_B64 != '' }}
+        if: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' }}
         working-directory: apps/mobile/android
         env:
           CONSUMER_AAB_PATH: ${{ runner.temp }}/out/claudia-${{ steps.version.outputs.VERSION_NAME }}-consumer.aab
         run: |
-          echo "$PLAY_JSON_B64" | base64 -d > "$RUNNER_TEMP/play.json"
-          export PLAY_SERVICE_ACCOUNT_JSON="$RUNNER_TEMP/play.json"
-          gem install --no-document fastlane
+          gem install --no-document fastlane   # uses ADC from the auth step (no key)
           fastlane internal

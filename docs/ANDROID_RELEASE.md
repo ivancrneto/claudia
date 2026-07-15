@@ -35,7 +35,7 @@ The signed Android release runs on **GitHub Actions**
 ([`.github/workflows/android-release.yml`](../.github/workflows/android-release.yml)),
 alongside the PR CI (tests + secret-scan).
 
-## Required GitHub Actions secrets (names only)
+## Required GitHub Actions secrets (signing)
 
 | Secret | Purpose |
 |---|---|
@@ -43,10 +43,62 @@ alongside the PR CI (tests + secret-scan).
 | `ANDROID_KEYSTORE_PASSWORD` | keystore store password |
 | `ANDROID_KEY_ALIAS` | upload key alias |
 | `ANDROID_KEY_PASSWORD` | upload key password |
-| `PLAY_SERVICE_ACCOUNT_JSON_B64` | *(optional)* base64 Play service-account JSON — enables the Play upload |
 
-None of these are in the repo; the `secret-scan` CI gate keeps it that way. `CLAUDIA_URL`
-(the WebView backend baked into the app) is a non-secret **repo variable** (`vars.CLAUDIA_URL`).
+`CLAUDIA_URL` (the WebView backend baked into the app) is a non-secret **repo variable**.
+
+## Play upload — keyless (Workload Identity Federation)
+
+The org enforces `iam.disableServiceAccountKeyCreation`, so there is **no service-account
+key**. The release authenticates **keylessly**: GitHub mints an OIDC token, Google exchanges
+it (STS) to impersonate a publisher service account, and fastlane supply uses the resulting
+ADC — no secret key anywhere.
+
+Enable it by setting two repo **variables** (Settings → Secrets and variables → Actions →
+Variables):
+
+| Variable | Example |
+|---|---|
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/123456789/locations/global/workloadIdentityPools/github/providers/github` |
+| `GCP_PLAY_PUBLISHER_SA` | `play-publisher@your-project.iam.gserviceaccount.com` |
+
+If they're unset, the release still builds/signs the AAB and attaches the APK to the GitHub
+Release — it just skips the Play upload.
+
+### One-time GCP setup (needs a project admin)
+
+```bash
+PROJECT_ID=your-gcp-project
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+POOL=github ; PROVIDER=github ; REPO=ivancrneto/claudia
+SA=play-publisher@$PROJECT_ID.iam.gserviceaccount.com
+
+# 1) publisher service account (no key is ever created)
+gcloud iam service-accounts create play-publisher --project "$PROJECT_ID" \
+  --display-name "Play publisher (Claudia)"
+
+# 2) Workload Identity Pool + GitHub OIDC provider (scoped to this repo)
+gcloud iam workload-identity-pools create "$POOL" --project "$PROJECT_ID" --location global \
+  --display-name "GitHub Actions"
+gcloud iam workload-identity-pools providers create-oidc "$PROVIDER" --project "$PROJECT_ID" \
+  --location global --workload-identity-pool "$POOL" --display-name GitHub \
+  --issuer-uri "https://token.actions.githubusercontent.com" \
+  --attribute-mapping "google.subject=assertion.sub,attribute.repository=assertion.repository" \
+  --attribute-condition "assertion.repository=='$REPO'"
+
+# 3) let this repo impersonate the SA
+gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT_ID" \
+  --role roles/iam.workloadIdentityUser \
+  --member "principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL/attribute.repository/$REPO"
+
+# the value for GCP_WORKLOAD_IDENTITY_PROVIDER:
+echo "projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL/providers/$PROVIDER"
+```
+
+### Link the SA in Play
+
+Play Console → **Setup → API access** → link the GCP project → grant the `play-publisher`
+service account access with **"Release to testing tracks"** (or Admin). This is what lets it
+push to the internal track.
 
 ## Versioning
 
@@ -66,8 +118,8 @@ passed to Gradle as `-PversionName` / `-PversionCode`.
    - builds `assembleKioskRelease` (APK) + `bundleConsumerRelease` (AAB), signed via the
      `CLAUDIA_UPLOAD_*` env the Gradle `signingConfig` reads,
    - uploads both as a workflow artifact, attaches the **kiosk APK** to the GitHub Release,
-   - uploads the **consumer AAB** to the Play **internal** track via fastlane (when
-     `PLAY_SERVICE_ACCOUNT_JSON_B64` is set).
+   - uploads the **consumer AAB** to the Play **internal** track via fastlane, authenticating
+     keylessly via WIF (when `GCP_WORKLOAD_IDENTITY_PROVIDER` / `GCP_PLAY_PUBLISHER_SA` are set).
 3. Promote to production when ready: run the `promote` fastlane lane (staged rollout).
 
 ## Kiosk distribution
