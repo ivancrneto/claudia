@@ -51,12 +51,31 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Restore upload keystore
+      - name: Restore & validate upload keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.keystore"
-          echo "CLAUDIA_UPLOAD_STORE_FILE=$RUNNER_TEMP/upload.keystore" >> "$GITHUB_ENV"
+          KS="$RUNNER_TEMP/upload.keystore"
+          # Strip any wrapping/whitespace, then decode exactly once.
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > "$KS" || {
+            echo "::error::ANDROID_KEYSTORE_BASE64 failed to base64-decode."; exit 1; }
+          if [ ! -s "$KS" ]; then echo "::error::decoded keystore is empty."; exit 1; fi
+          # Catch a double-encoded secret: a real keystore is binary, not ASCII text.
+          if LC_ALL=C grep -qI . "$KS"; then
+            echo "::error::Decoded file looks like text, not a keystore — ANDROID_KEYSTORE_BASE64 is"
+            echo "  probably double base64-encoded. Regenerate it from the .jks (see below) and re-set it."
+            echo "  Linux:  base64 -w0 upload.jks | gh secret set ANDROID_KEYSTORE_BASE64 --repo ivancrneto/claudia"
+            echo "  macOS:  base64 -i upload.jks | tr -d '\\n' | gh secret set ANDROID_KEYSTORE_BASE64 --repo ivancrneto/claudia"
+            exit 1
+          fi
+          # Validate it loads with the given password before the (long) build.
+          if ! keytool -list -keystore "$KS" -storepass "$ANDROID_KEYSTORE_PASSWORD" >/dev/null 2>/tmp/kt.err; then
+            echo "::error::Keystore failed to load — check ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD."
+            sed -E 's/[A-Za-z0-9+/]{16,}/<redacted>/g' /tmp/kt.err || true
+            exit 1
+          fi
+          echo "CLAUDIA_UPLOAD_STORE_FILE=$KS" >> "$GITHUB_ENV"
 
       - name: Build kiosk APK + consumer AAB (signed)
         working-directory: apps/mobile/android
