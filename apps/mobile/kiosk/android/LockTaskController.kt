@@ -1,4 +1,4 @@
-package com.claudia.kiosk
+package dev.gogix.claudia.kiosk
 
 import android.app.Activity
 import android.app.admin.DevicePolicyManager

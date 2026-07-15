@@ -25,7 +25,7 @@
 
         <!-- Device Owner admin (Lock Task / COSU) -->
         <receiver
-            android:name="com.claudia.kiosk.ClaudiaDeviceAdminReceiver"
+            android:name="dev.gogix.claudia.kiosk.ClaudiaDeviceAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
             android:exported="true">
             <meta-data
@@ -38,7 +38,7 @@
 
         <!-- Auto-launch on boot -->
         <receiver
-            android:name="com.claudia.kiosk.BootReceiver"
+            android:name="dev.gogix.claudia.kiosk.BootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
@@ -47,7 +47,7 @@
 
         <!-- Kiosk fallback guard (sideload/MDM builds only; see kiosk docs) -->
         <service
-            android:name="com.claudia.kiosk.KioskAccessibilityService"
+            android:name="dev.gogix.claudia.kiosk.KioskAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="false">
             <intent-filter>
