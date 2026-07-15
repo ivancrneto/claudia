@@ -111,7 +111,7 @@ async def _lifespan(_app: "FastAPI"):
     yield
 
 
-app = FastAPI(title="Claudia Gateway", version="0.4.0", lifespan=_lifespan)
+app = FastAPI(title="Claudia Gateway", version="0.4.1", lifespan=_lifespan)
 
 
 class HandleIn(BaseModel):
@@ -166,7 +166,7 @@ _INDEX_HTML = """<!doctype html>
   button { padding:12px 16px; border:0; border-radius:12px; background:#2b6cff; color:#fff; font-size:16px; }
 </style></head><body>
 <header>Claudia</header>
-<div id="log"><div class="msg bot">Oi! Pergunta algo: "quando o Bahia joga", "toca Bruno Mars", "como está o tempo"…</div></div>
+<div id="log"><div class="msg bot">Oi, eu sou a Claudia! 👋 Pergunta algo: "quando o Bahia joga", "toca Bruno Mars", "como está o tempo"…</div></div>
 <form id="f"><input id="t" autocomplete="off" placeholder="Fale com a Claudia…" autofocus><button>Enviar</button></form>
 <script>
   const log = document.getElementById('log'), f = document.getElementById('f'), t = document.getElementById('t');
