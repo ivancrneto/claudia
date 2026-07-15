@@ -1,4 +1,4 @@
-package com.claudia.kiosk
+package dev.gogix.claudia.kiosk
 
 import android.content.BroadcastReceiver
 import android.content.Context

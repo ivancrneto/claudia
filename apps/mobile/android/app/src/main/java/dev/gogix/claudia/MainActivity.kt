@@ -1,9 +1,9 @@
-package com.claudia
+package dev.gogix.claudia
 
 import android.app.Activity
 import android.os.Bundle
 import android.webkit.WebView
-import com.claudia.kiosk.LockTaskController
+import dev.gogix.claudia.kiosk.LockTaskController
 
 /**
  * Launcher activity. Loads the Claudia web client (served by the gateway) in a WebView so

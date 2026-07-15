@@ -1,4 +1,4 @@
-package com.claudia.kiosk
+package dev.gogix.claudia.kiosk
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent

@@ -9,7 +9,7 @@ def appVersionName = project.hasProperty("versionName") ? project.versionName : 
 def appVersionCode = project.hasProperty("versionCode") ? project.versionCode.toInteger() : 1
 
 android {
-    namespace "com.claudia"
+    namespace "dev.gogix.claudia"
     compileSdk 34
 
     // Backend URL the WebView loads. Override at build time with -PclaudiaUrl=http://<ip>:8000/.
@@ -49,12 +49,12 @@ android {
     productFlavors {
         kiosk {
             dimension "distribution"
-            applicationId "com.claudia.kiosk"
+            applicationId "dev.gogix.claudia.kiosk"
             versionNameSuffix "-kiosk"
         }
         consumer {
             dimension "distribution"
-            applicationId "com.claudia"
+            applicationId "dev.gogix.claudia"
         }
     }
 

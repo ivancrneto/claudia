@@ -82,10 +82,10 @@ set otherwise). This makes Claudia un-closable (see `ARCHITECTURE.md` §7).
    ```
 2. Make Claudia the Device Owner (no accounts on the device):
    ```bash
-   adb shell dpm set-device-owner com.claudia.kiosk/com.claudia.kiosk.ClaudiaDeviceAdminReceiver
+   adb shell dpm set-device-owner dev.gogix.claudia.kiosk/dev.gogix.claudia.kiosk.ClaudiaDeviceAdminReceiver
    ```
 3. Launch it — `MainActivity` calls `startLockTask()` and the tablet is pinned to Claudia.
-   To undo during testing: `adb shell dpm remove-active-admin com.claudia.kiosk/...` then
+   To undo during testing: `adb shell dpm remove-active-admin dev.gogix.claudia.kiosk/...` then
    factory reset.
 
 ---
