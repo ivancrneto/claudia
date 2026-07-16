@@ -128,6 +128,15 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_PLAY_PUBLISHER_SA }}
 
+      # ruby/setup-ruby gives a user-writable gem env (the runner's system Ruby installs
+      # into /var/lib/gems, which isn't writable without sudo) and caches fastlane's gems.
+      - name: Set up Ruby for fastlane
+        if: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: false
+
       - name: Upload consumer AAB to Play (internal)
         if: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' }}
         working-directory: apps/mobile/android
