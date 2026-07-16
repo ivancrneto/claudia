@@ -1,4 +1,7 @@
-# Play service-account JSON is provided via env in CI (PLAY_SERVICE_ACCOUNT_JSON path),
-# never committed. Package name is the consumer flavor's applicationId.
-json_key_file(ENV["PLAY_SERVICE_ACCOUNT_JSON"])
+# Auth is keyless in CI: GitHub OIDC -> Workload Identity Federation writes ADC creds
+# (GOOGLE_APPLICATION_CREDENTIALS), which fastlane supply uses when no json_key is given.
+# Only fall back to a JSON key if one is explicitly provided (the org blocks SA keys, so
+# normally there isn't one). Package name is the consumer flavor's applicationId.
+json_key = ENV["PLAY_SERVICE_ACCOUNT_JSON"]
+json_key_file(json_key) if json_key && !json_key.empty?
 package_name("dev.gogix.claudia")
