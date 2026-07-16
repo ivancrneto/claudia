@@ -47,8 +47,13 @@ Incremental build phases. Each phase is independently demoable.
   `EchoStreamingSTT`.
 - ✅ `VoiceSession` state machine (IDLE→LISTENING→THINKING→SPEAKING) with **barge-in** that
   cancels TTS playback mid-reply and yields the floor back to LISTENING.
+- ✅ **On-device app voice** (Android): native `SpeechRecognizer` (pt-BR STT) + `TextToSpeech`
+  exposed to the WebView via the `AndroidVoice` bridge; the web client runs a hands-free
+  listen→think→speak→listen loop with a mic button, interim-transcript preview, and a Web
+  Speech API fallback for the browser.
 - ⏳ Follow-ups: real openWakeWord + faster-whisper streaming decode, VAD endpointing,
-  early-intent on a stable prefix, and a streaming `WS /ws/voice` that emits partials.
+  early-intent on a stable prefix, a streaming `WS /ws/voice` that emits partials, and an
+  always-listening wake word ("Claudia") via a foreground service.
 
 ## Phase 3.5 — Bring Your Own Assistant ✅ (in progress)
 - ✅ Native adapters: `AnthropicAdapter`, `OpenAIAdapter`, `GeminiAdapter`, plus
@@ -83,8 +88,10 @@ Incremental build phases. Each phase is independently demoable.
   consumer AAB to Play (fastlane). Secrets `ANDROID_KEYSTORE_*` / `PLAY_SERVICE_ACCOUNT_JSON_B64`;
   `CLAUDIA_URL` repo var. `tools/android_version.py` unit-tested.
 - ✅ `docs/ANDROID_RELEASE.md`, `.gitignore` hardened for keystores/Play creds/build outputs.
-- ⏳ Follow-ups: the React Native / voice UI mounted in `MainActivity`, screenshots/metadata
-  for Play, and a full Gradle build in CI (needs the Android SDK).
+- ✅ On-device voice mounted in `MainActivity`: `SpeechRecognizer` + `TextToSpeech` bridged
+  into the WebView (RECORD_AUDIO runtime prompt, recognizer package `<queries>`).
+- ⏳ Follow-ups: a fully native (non-WebView) voice UI, screenshots/metadata for Play, and a
+  full Gradle build in CI (needs the Android SDK).
 
 ## Phase 4 — Personalization ✅ (in progress)
 - ✅ Per-user `Profile` (favorite team, locale, city, coords) merged into the turn context;

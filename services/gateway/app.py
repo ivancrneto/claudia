@@ -111,7 +111,7 @@ async def _lifespan(_app: "FastAPI"):
     yield
 
 
-app = FastAPI(title="Claudia Gateway", version="0.4.1", lifespan=_lifespan)
+app = FastAPI(title="Claudia Gateway", version="0.5.0", lifespan=_lifespan)
 
 
 class HandleIn(BaseModel):
@@ -161,27 +161,138 @@ _INDEX_HTML = """<!doctype html>
   .me { align-self:flex-end; background:#2b6cff; color:#fff; border-bottom-right-radius:4px; }
   .bot { align-self:flex-start; background:#1b1e25; border:1px solid #23262d; border-bottom-left-radius:4px; }
   .act { align-self:flex-start; font-size:12px; color:#9aa4b2; padding:2px 4px; }
-  form { display:flex; gap:8px; padding:12px; border-top:1px solid #23262d; }
+  .ghost { align-self:flex-end; opacity:.55; font-style:italic; }
+  #status { text-align:center; font-size:13px; color:#9aa4b2; min-height:18px; padding:4px 0; }
+  form { display:flex; gap:8px; align-items:center; padding:12px; border-top:1px solid #23262d; }
   input { flex:1; padding:12px 14px; border-radius:12px; border:1px solid #2a2e37; background:#151821; color:#e8eaed; font-size:16px; }
   button { padding:12px 16px; border:0; border-radius:12px; background:#2b6cff; color:#fff; font-size:16px; }
+  /* Mic button: a round tap-to-talk control that reflects the voice state. */
+  #mic { width:52px; height:52px; padding:0; border-radius:50%; background:#1b1e25; border:1px solid #2a2e37;
+         font-size:22px; line-height:1; flex:0 0 auto; transition:background .15s, box-shadow .15s; }
+  #mic.listening { background:#c0392b; box-shadow:0 0 0 0 rgba(192,57,43,.6); animation:pulse 1.2s infinite; }
+  #mic.speaking  { background:#2b6cff; }
+  #mic.thinking  { background:#7a5cff; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(192,57,43,.55)} 70%{box-shadow:0 0 0 16px rgba(192,57,43,0)} 100%{box-shadow:0 0 0 0 rgba(192,57,43,0)} }
 </style></head><body>
 <header>Claudia</header>
-<div id="log"><div class="msg bot">Oi, eu sou a Claudia! 👋 Pergunta algo: "quando o Bahia joga", "toca Bruno Mars", "como está o tempo"…</div></div>
-<form id="f"><input id="t" autocomplete="off" placeholder="Fale com a Claudia…" autofocus><button>Enviar</button></form>
+<div id="log"><div class="msg bot">Oi, eu sou a Claudia! 👋 Toque no microfone e fale — "quando o Bahia joga", "toca Bruno Mars", "como está o tempo"… ou digite.</div></div>
+<div id="status"></div>
+<form id="f">
+  <button id="mic" type="button" aria-label="Falar" title="Falar">🎙️</button>
+  <input id="t" autocomplete="off" placeholder="Fale com a Claudia…">
+  <button type="submit">Enviar</button>
+</form>
 <script>
-  const log = document.getElementById('log'), f = document.getElementById('f'), t = document.getElementById('t');
+  const log = document.getElementById('log'), f = document.getElementById('f'),
+        t = document.getElementById('t'), mic = document.getElementById('mic'),
+        statusEl = document.getElementById('status');
+  const native = window.AndroidVoice;   // present inside the app's WebView
+
   const add = (text, cls) => { const d = document.createElement('div'); d.className = 'msg ' + cls; d.textContent = text; log.appendChild(d); log.scrollTop = log.scrollHeight; return d; };
-  f.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const text = t.value.trim(); if (!text) return;
-    add(text, 'me'); t.value = '';
+  const setStatus = (s) => { statusEl.textContent = s || ''; };
+
+  // --- partial (interim) transcript preview -------------------------------
+  let ghost = null;
+  const showPartial = (txt) => { if (!ghost) ghost = add('', 'msg ghost'); ghost.textContent = txt; log.scrollTop = log.scrollHeight; };
+  const clearPartial = () => { if (ghost) { ghost.remove(); ghost = null; } };
+
+  // --- voice state machine -------------------------------------------------
+  let handsFree = false;   // conversation mode: keep listening after each reply
+  let silence = 0;         // consecutive empty/no-match results, to avoid an endless mic loop
+  const STATES = { idle:'', listening:'listening', thinking:'thinking', speaking:'speaking' };
+  let state = 'idle';
+  const LABEL = { idle:'', listening:'Ouvindo…', thinking:'Pensando…', speaking:'Falando…' };
+  function setState(s) {
+    state = s;
+    mic.className = STATES[s] || '';
+    mic.textContent = (s === 'idle') ? '🎙️' : (s === 'speaking' ? '🔊' : '⏹️');
+    setStatus(LABEL[s]);
+  }
+
+  // --- speak / listen, native bridge with a Web Speech API fallback --------
+  let webRec = null;
+  function speak(text) {
+    if (native) { native.speak(text); return; }
+    if (window.speechSynthesis) {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'pt-BR';
+      const v = (speechSynthesis.getVoices() || []).find(v => /pt(-|_)?BR/i.test(v.lang));
+      if (v) u.voice = v;
+      u.onstart = () => ClaudiaVoice.onSpeakStart();
+      u.onend = () => ClaudiaVoice.onSpeakDone();
+      speechSynthesis.cancel(); speechSynthesis.speak(u);
+    } else { ClaudiaVoice.onSpeakDone(); }
+  }
+  function listen() {
+    if (native) { native.listen(); return; }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setStatus('Voz não suportada neste navegador — digite abaixo.'); handsFree = false; setState('idle'); return; }
+    webRec = new SR();
+    webRec.lang = 'pt-BR'; webRec.interimResults = true; webRec.maxAlternatives = 1;
+    webRec.onstart = () => ClaudiaVoice.onListenStart();
+    webRec.onerror = (e) => ClaudiaVoice.onError('web-' + e.error);
+    webRec.onresult = (e) => {
+      let interim = '', finalT = '';
+      for (const r of e.results) { if (r.isFinal) finalT += r[0].transcript; else interim += r[0].transcript; }
+      if (interim) ClaudiaVoice.onPartial(interim);
+      if (finalT) ClaudiaVoice.onResult(finalT);
+    };
+    try { webRec.start(); } catch (_) {}
+  }
+  function stopListen() { if (native) native.stopListening(); else if (webRec) { try { webRec.stop(); } catch (_) {} } }
+  function cancelAll() { handsFree = false; stopListen(); if (native) native.cancel(); else if (window.speechSynthesis) speechSynthesis.cancel(); setState('idle'); }
+
+  // --- callbacks invoked by the native bridge (and reused by the web path) -
+  window.ClaudiaVoice = {
+    onListenStart() { silence = 0; setState('listening'); },
+    onPartial(txt) { showPartial(txt); },
+    onListenEnd() { if (state === 'listening') setState('thinking'); },
+    onResult(txt) {
+      clearPartial();
+      txt = (txt || '').trim();
+      if (!txt) { if (handsFree && silence++ < 2) { setState('idle'); listen(); } else { handsFree = false; setState('idle'); } return; }
+      add(txt, 'me'); ask(txt);
+    },
+    onError(code) {
+      clearPartial();
+      const soft = /(-6|-7|no-speech|no-match|aborted|speech-timeout)/i.test(code || '');
+      if (handsFree && soft && silence++ < 2) { setState('idle'); listen(); return; }
+      if (/mic-permission|not-allowed|denied/i.test(code)) setStatus('Permita o microfone para usar voz.');
+      else if (/no-recognizer|not-supported|service-not-allowed/i.test(code)) setStatus('Reconhecimento de voz indisponível.');
+      handsFree = false; silence = 0; setState('idle');
+    },
+    onSpeakStart() { setState('speaking'); },
+    onSpeakDone() { if (handsFree) { setState('idle'); listen(); } else setState('idle'); },
+    onMicGranted() { if (handsFree) listen(); },
+    onMicDenied() { handsFree = false; setState('idle'); setStatus('Permita o microfone para usar voz.'); },
+  };
+
+  // --- the brain turn: text in -> gateway -> spoken reply ------------------
+  async function ask(text) {
+    silence = 0; setState('thinking');
     try {
       const r = await fetch('/dev/handle', { method:'POST', headers:{'content-type':'application/json'},
         body: JSON.stringify({ text, user: { user_id: 'device' } }) });
       const data = await r.json();
-      add(data.speech || '(sem resposta)', 'bot');
+      const speech = data.speech || '(sem resposta)';
+      add(speech, 'bot');
       (data.actions || []).forEach(a => add('⚙ ' + a.type + (a.params && a.params.query ? ': ' + a.params.query : ''), 'act'));
-    } catch (err) { add('Erro ao falar com o servidor: ' + err, 'bot'); }
+      speak(speech);   // onSpeakDone re-listens when handsFree
+    } catch (err) { add('Erro ao falar com o servidor: ' + err, 'bot'); handsFree = false; setState('idle'); }
+  }
+
+  // Mic button toggles a hands-free conversation; tap again to stop.
+  mic.addEventListener('click', () => {
+    if (handsFree || state !== 'idle') { cancelAll(); return; }
+    handsFree = true; silence = 0; listen();
+  });
+
+  // Typing is always available and runs a single (non-hands-free) turn.
+  f.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = t.value.trim(); if (!text) return;
+    handsFree = false; t.value = '';
+    add(text, 'me'); ask(text);
   });
 </script></body></html>"""
 
