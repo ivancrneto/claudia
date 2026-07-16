@@ -42,12 +42,33 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ## Deploy (self-hosted VPS + Docker Compose)
 
-```bash
-# On the VPS, secrets live outside the repo:
-sudoedit /etc/claudia/claudia.env         # fill VAULT_KEY, API_FOOTBALL_KEY, etc. (chmod 600)
-export CLAUDIA_ENV_FILE=/etc/claudia/claudia.env
-export CLAUDIA_DOMAIN=claudia.example.com  # Caddy provisions TLS for this host
+The one-liner is wrapped by [`scripts/deploy.sh`](../scripts/deploy.sh), which adds preflight
+checks, first-run secret scaffolding, and a post-deploy health probe:
 
+```bash
+# 1) one-time: scaffold the secrets file OUTSIDE the repo (generates a VAULT_KEY, chmod 600)
+CLAUDIA_DOMAIN=claudia.example.com scripts/deploy.sh init
+sudoedit /etc/claudia/claudia.env          # add optional keys (API_FOOTBALL_KEY, PostHog…)
+
+# 2) build + (re)start + wait for /health
+CLAUDIA_DOMAIN=claudia.example.com scripts/deploy.sh deploy
+
+# later: pull latest first, or inspect
+GIT_PULL=1 CLAUDIA_DOMAIN=claudia.example.com scripts/deploy.sh deploy
+scripts/deploy.sh status      # compose ps + probe https://<domain>/health
+scripts/deploy.sh logs        # follow logs
+scripts/deploy.sh down        # stop the stack
+```
+
+Config is via environment: `CLAUDIA_DOMAIN` (required), `CLAUDIA_ENV_FILE`
+(default `/etc/claudia/claudia.env`), `GIT_PULL=1`, `HEALTH_TIMEOUT` (default 90s). The
+secrets file is created outside the repo and never committed.
+
+Under the hood it's just the compose invocation, which you can also run directly:
+
+```bash
+export CLAUDIA_ENV_FILE=/etc/claudia/claudia.env
+export CLAUDIA_DOMAIN=claudia.example.com   # Caddy provisions TLS for this host
 docker compose -f infra/docker-compose.prod.yml up -d --build
 ```
 
