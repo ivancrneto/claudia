@@ -51,9 +51,14 @@ Incremental build phases. Each phase is independently demoable.
   exposed to the WebView via the `AndroidVoice` bridge; the web client runs a hands-free
   listen→think→speak→listen loop with a mic button, interim-transcript preview, and a Web
   Speech API fallback for the browser.
+- ✅ **On-device wake word** ("Claudia"): a WAKE/COMMAND/IDLE state machine drives a
+  self-restarting recognition loop; hearing "Claudia" (accent/case-insensitive) fires a turn,
+  and a trailing command in the same breath ("Claudia, que horas são") is used directly. TTS
+  pauses the loop; it resumes after speaking. MVP built on `SpeechRecognizer`.
 - ⏳ Follow-ups: real openWakeWord + faster-whisper streaming decode, VAD endpointing,
-  early-intent on a stable prefix, a streaming `WS /ws/voice` that emits partials, and an
-  always-listening wake word ("Claudia") via a foreground service.
+  early-intent on a stable prefix, a streaming `WS /ws/voice` that emits partials, and a
+  dedicated low-power hotword engine (openWakeWord / Vosk / Porcupine) in a foreground
+  service so the wake word works with the screen off / app backgrounded (phone flavor).
 
 ## Phase 3.5 — Bring Your Own Assistant ✅ (in progress)
 - ✅ Native adapters: `AnthropicAdapter`, `OpenAIAdapter`, `GeminiAdapter`, plus

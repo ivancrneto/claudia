@@ -111,7 +111,7 @@ async def _lifespan(_app: "FastAPI"):
     yield
 
 
-app = FastAPI(title="Claudia Gateway", version="0.5.0", lifespan=_lifespan)
+app = FastAPI(title="Claudia Gateway", version="0.5.1", lifespan=_lifespan)
 
 
 class HandleIn(BaseModel):
@@ -172,10 +172,12 @@ _INDEX_HTML = """<!doctype html>
   #mic.listening { background:#c0392b; box-shadow:0 0 0 0 rgba(192,57,43,.6); animation:pulse 1.2s infinite; }
   #mic.speaking  { background:#2b6cff; }
   #mic.thinking  { background:#7a5cff; }
+  #mic.wake      { background:#1f7a4d; box-shadow:0 0 0 0 rgba(31,122,77,.5); animation:pulse-wake 2.4s infinite; }
   @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(192,57,43,.55)} 70%{box-shadow:0 0 0 16px rgba(192,57,43,0)} 100%{box-shadow:0 0 0 0 rgba(192,57,43,0)} }
+  @keyframes pulse-wake { 0%{box-shadow:0 0 0 0 rgba(31,122,77,.5)} 70%{box-shadow:0 0 0 12px rgba(31,122,77,0)} 100%{box-shadow:0 0 0 0 rgba(31,122,77,0)} }
 </style></head><body>
 <header>Claudia</header>
-<div id="log"><div class="msg bot">Oi, eu sou a Claudia! 👋 Toque no microfone e fale — "quando o Bahia joga", "toca Bruno Mars", "como está o tempo"… ou digite.</div></div>
+<div id="log"><div class="msg bot">Oi, eu sou a Claudia! 👋 Toque no 🎙️ para ativar o modo "Claudia" e fale sem tocar — "Claudia, quando o Bahia joga", "Claudia, toca Bruno Mars", "como está o tempo"… ou digite.</div></div>
 <div id="status"></div>
 <form id="f">
   <button id="mic" type="button" aria-label="Falar" title="Falar">🎙️</button>
@@ -187,6 +189,8 @@ _INDEX_HTML = """<!doctype html>
         t = document.getElementById('t'), mic = document.getElementById('mic'),
         statusEl = document.getElementById('status');
   const native = window.AndroidVoice;   // present inside the app's WebView
+  const canWake = !!(native && native.startWake);   // always-listening wake word (app only)
+  const WAKE_HINT = 'Diga "Claudia"…';
 
   const add = (text, cls) => { const d = document.createElement('div'); d.className = 'msg ' + cls; d.textContent = text; log.appendChild(d); log.scrollTop = log.scrollHeight; return d; };
   const setStatus = (s) => { statusEl.textContent = s || ''; };
@@ -197,16 +201,18 @@ _INDEX_HTML = """<!doctype html>
   const clearPartial = () => { if (ghost) { ghost.remove(); ghost = null; } };
 
   // --- voice state machine -------------------------------------------------
-  let handsFree = false;   // conversation mode: keep listening after each reply
+  let handsFree = false;   // tap-to-talk conversation mode: keep listening after each reply
+  let wakeMode = false;    // always-listening wake word ("Claudia") is armed
   let silence = 0;         // consecutive empty/no-match results, to avoid an endless mic loop
   const STATES = { idle:'', listening:'listening', thinking:'thinking', speaking:'speaking' };
   let state = 'idle';
   const LABEL = { idle:'', listening:'Ouvindo…', thinking:'Pensando…', speaking:'Falando…' };
   function setState(s) {
     state = s;
-    mic.className = STATES[s] || '';
-    mic.textContent = (s === 'idle') ? '🎙️' : (s === 'speaking' ? '🔊' : '⏹️');
-    setStatus(LABEL[s]);
+    mic.className = (s === 'idle' && wakeMode) ? 'wake' : (STATES[s] || '');
+    mic.textContent = (s !== 'idle') ? (s === 'speaking' ? '🔊' : '⏹️') : (wakeMode ? '👂' : '🎙️');
+    // In wake mode the idle state is "still listening for the wake word", not blank.
+    setStatus((s === 'idle' && wakeMode) ? WAKE_HINT : LABEL[s]);
   }
 
   // --- speak / listen, native bridge with a Web Speech API fallback --------
@@ -247,14 +253,29 @@ _INDEX_HTML = """<!doctype html>
     onListenStart() { silence = 0; setState('listening'); },
     onPartial(txt) { showPartial(txt); },
     onListenEnd() { if (state === 'listening') setState('thinking'); },
+    // Wake word heard. The native loop passes any trailing command ("Claudia, que horas são");
+    // if it's empty we actively capture the follow-up utterance.
+    onWake(command) {
+      clearPartial();
+      command = (command || '').trim();
+      if (command) { setState('thinking'); add(command, 'me'); ask(command); }
+      else { setState('listening'); listen(); }
+    },
     onResult(txt) {
       clearPartial();
       txt = (txt || '').trim();
-      if (!txt) { if (handsFree && silence++ < 2) { setState('idle'); listen(); } else { handsFree = false; setState('idle'); } return; }
+      if (!txt) {
+        // Nothing heard. In wake mode the native side keeps the loop alive; just show the hint.
+        if (wakeMode) { setState('idle'); return; }
+        if (handsFree && silence++ < 2) { setState('idle'); listen(); } else { handsFree = false; setState('idle'); }
+        return;
+      }
       add(txt, 'me'); ask(txt);
     },
     onError(code) {
       clearPartial();
+      // In wake mode the native loop recovers on its own — stay armed.
+      if (wakeMode) { setState('idle'); return; }
       const soft = /(-6|-7|no-speech|no-match|aborted|speech-timeout)/i.test(code || '');
       if (handsFree && soft && silence++ < 2) { setState('idle'); listen(); return; }
       if (/mic-permission|not-allowed|denied/i.test(code)) setStatus('Permita o microfone para usar voz.');
@@ -262,9 +283,11 @@ _INDEX_HTML = """<!doctype html>
       handsFree = false; silence = 0; setState('idle');
     },
     onSpeakStart() { setState('speaking'); },
-    onSpeakDone() { if (handsFree) { setState('idle'); listen(); } else setState('idle'); },
-    onMicGranted() { if (handsFree) listen(); },
-    onMicDenied() { handsFree = false; setState('idle'); setStatus('Permita o microfone para usar voz.'); },
+    // After speaking: wake mode resumes on the native side (don't double-listen); tap-to-talk
+    // re-listens here.
+    onSpeakDone() { if (wakeMode) setState('idle'); else if (handsFree) { setState('idle'); listen(); } else setState('idle'); },
+    onMicGranted() { if (wakeMode) native.startWake(); else if (handsFree) listen(); },
+    onMicDenied() { handsFree = false; wakeMode = false; setState('idle'); setStatus('Permita o microfone para usar voz.'); },
   };
 
   // --- the brain turn: text in -> gateway -> spoken reply ------------------
@@ -281,13 +304,24 @@ _INDEX_HTML = """<!doctype html>
     } catch (err) { add('Erro ao falar com o servidor: ' + err, 'bot'); handsFree = false; setState('idle'); }
   }
 
-  // Mic button toggles a hands-free conversation; tap again to stop.
+  // Mic button:
+  //  - in the app (wake word available): arm/disarm always-listening. Then just say "Claudia".
+  //  - in the browser: tap-to-talk hands-free conversation.
   mic.addEventListener('click', () => {
+    if (canWake) {
+      if (wakeMode || state !== 'idle') {
+        wakeMode = false; native.stopWake(); native.cancel && native.cancel();
+        setState('idle'); setStatus('');
+      } else {
+        wakeMode = true; silence = 0; setState('idle'); native.startWake();
+      }
+      return;
+    }
     if (handsFree || state !== 'idle') { cancelAll(); return; }
     handsFree = true; silence = 0; listen();
   });
 
-  // Typing is always available and runs a single (non-hands-free) turn.
+  // Typing is always available and runs a single turn (without disarming the wake word).
   f.addEventListener('submit', (e) => {
     e.preventDefault();
     const text = t.value.trim(); if (!text) return;
