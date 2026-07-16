@@ -106,12 +106,15 @@ jobs:
           name: claudia-android-${{ steps.version.outputs.VERSION_NAME }}
           path: ${{ runner.temp }}/out/*
 
-      # Kiosk APK -> GitHub Release asset (for MDM/sideload). Tag pushes only.
-      - name: Attach kiosk APK to the GitHub Release
+      # Attach the kiosk APK (MDM/sideload) AND the consumer AAB (for manual Play upload
+      # when keyless WIF isn't configured) to the GitHub Release. Tag pushes only.
+      - name: Attach APK + AAB to the GitHub Release
         if: ${{ github.ref_type == 'tag' }}
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ runner.temp }}/out/claudia-*-kiosk.apk
+          files: |
+            ${{ runner.temp }}/out/claudia-*-kiosk.apk
+            ${{ runner.temp }}/out/claudia-*-consumer.aab
 
       # --- Keyless Play upload via Workload Identity Federation ---
       # No service-account key (the org blocks key creation). GitHub mints an OIDC token,
