@@ -111,7 +111,7 @@ async def _lifespan(_app: "FastAPI"):
     yield
 
 
-app = FastAPI(title="Claudia Gateway", version="0.5.1", lifespan=_lifespan)
+app = FastAPI(title="Claudia Gateway", version="0.5.2", lifespan=_lifespan)
 
 
 class HandleIn(BaseModel):
@@ -328,6 +328,18 @@ _INDEX_HTML = """<!doctype html>
     handsFree = false; t.value = '';
     add(text, 'me'); ask(text);
   });
+
+  // Auto-arm the wake word on load so the app is hands-free from the start — no tap, just say
+  // "Claudia" (Alexa-style). Native STT/TTS run with the app's mic permission, so no browser
+  // gesture is needed. In a plain browser (no bridge) autoplay/mic policies block this, so we
+  // leave tap-to-talk there. Tapping the mic still disarms/re-arms.
+  if (canWake) {
+    wakeMode = true;
+    const greet = document.querySelector('.msg.bot');
+    if (greet) greet.textContent = 'Oi! Já estou ouvindo 👂 — é só dizer "Claudia" (ex.: "Claudia, quando o Bahia joga"). Também dá pra digitar.';
+    setState('idle');        // shows the 👂 "Diga Claudia…" armed state
+    native.startWake();      // if the mic isn't granted yet, onMicGranted re-arms
+  }
 </script></body></html>"""
 
 
