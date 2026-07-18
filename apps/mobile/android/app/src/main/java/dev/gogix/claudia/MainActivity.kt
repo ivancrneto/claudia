@@ -195,8 +195,10 @@ class MainActivity : Activity() {
         if (!guardRecognition()) { wakeEnabled = false; return }
         mode = Mode.WAKE
         newRecognizer(forWake = true)
-        // Offline-preferred keeps the passive loop cheap and low-latency.
-        recognizer?.startListening(recognizerIntent(partial = false, offline = true))
+        // Use online recognition: most devices lack a downloaded pt-BR *offline* model, and
+        // EXTRA_PREFER_OFFLINE then makes the recognizer fail immediately (LANGUAGE_UNAVAILABLE)
+        // so the wake loop never actually listens. Online reliably supports pt-BR.
+        recognizer?.startListening(recognizerIntent(partial = false, offline = false))
     }
 
     private fun scheduleWakeRestart() {
